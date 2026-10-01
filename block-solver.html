@@ -1,0 +1,826 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
+<title>블럭 배치 솔버</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: 왼쪽 = 실제 게임판(조작의 중심), 오른쪽 = 스크린샷·손패·해답·라이브러리 패널. 좁은 화면에선 한 줄로 쌓임 */
+:root{
+  --bg:#e9ecef; --panel:#f8f9fa; --ink:#18212b; --muted:#5d6a76; --line:#cdd4da;
+  --cell-empty:#dfe4e8; --cell-fill:#2c3e50; --accent:#0e7c74; --accent-ink:#ffffff;
+  --ab-bg:#ffffff; --ab-e:#1f6fd1; --ab-r:#8a3fc7; --s1:#f0a202; --s2:#e4572e; --s3:#2e86de; --s4:#8e44ad; --serase:#c0392b;
+  --warn-bg:#fff3d6; --warn-ink:#6b4a00; --ok-bg:#dcf2ee; --ok-ink:#0b4f4a;
+  --f-display:"Do Hyeon","IBM Plex Sans KR",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans KR",system-ui,-apple-system,"Malgun Gothic",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12171c; --panel:#1b222a; --ink:#e6ebef; --muted:#93a1ad; --line:#2f3a45;
+  --cell-empty:#232c35; --cell-fill:#a9bccb; --accent:#2bb3a7; --accent-ink:#06201e;
+  --ab-bg:#0f1720; --ab-e:#5aa9ff; --ab-r:#c38bff; --warn-bg:#3a2e10; --warn-ink:#ffd98a; --ok-bg:#123a36; --ok-ink:#b6efe7; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171c; --panel:#1b222a; --ink:#e6ebef; --muted:#93a1ad; --line:#2f3a45;
+  --cell-empty:#232c35; --cell-fill:#a9bccb; --accent:#2bb3a7; --accent-ink:#06201e;
+  --ab-bg:#0f1720; --ab-e:#5aa9ff; --ab-r:#c38bff; --warn-bg:#3a2e10; --warn-ink:#ffd98a; --ok-bg:#123a36; --ok-ink:#b6efe7; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5;padding-inline:16px;padding-block:20px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+h1{font-family:var(--f-display);font-weight:400;font-size:32px;margin:0;letter-spacing:.5px}
+header p{margin:0;color:var(--muted)}
+h2{font-family:var(--f-display);font-weight:400;font-size:20px;margin:0}
+.layout{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.layout{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.between{justify-content:space-between}
+.muted{color:var(--muted)}
+.small{font-size:12.5px}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:7px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,.drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type=number],input[type=text],select{font:inherit;font-size:13px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+input[type=number]{width:70px} input[type=text]{width:120px}
+kbd{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--panel);color:var(--ink)}
+/* board */
+.board{display:grid;gap:2px;width:100%;user-select:none;touch-action:none;background:var(--line);padding:2px;border-radius:6px}
+.cell{aspect-ratio:1;background:var(--cell-empty);border-radius:2px;position:relative;display:flex;align-items:center;justify-content:center;font-size:11px}
+.cell.f{background:var(--cell-fill)}
+.cell.ab-e::after,.cell.ab-r::after{position:absolute;inset:12%;border-radius:50%;background:var(--ab-bg);display:flex;align-items:center;justify-content:center;font-size:clamp(9px,2vw,14px);line-height:1;font-weight:700}
+.cell.ab-e::after{content:"⊙";color:var(--ab-e);box-shadow:0 0 0 2px var(--ab-e)}
+.cell.ab-r::after{content:"⇄";color:var(--ab-r);box-shadow:0 0 0 2px var(--ab-r)}
+.cell.f.ab-e::after,.cell.f.ab-r::after,.cell.p1.ab-e::after,.cell.p1.ab-r::after,.cell.p2.ab-e::after,.cell.p2.ab-r::after,.cell.p3.ab-e::after,.cell.p3.ab-r::after{inset:auto;top:2px;right:2px;width:42%;height:42%;font-size:8px;box-shadow:0 0 0 1px currentColor}
+.cell.p1{background:var(--s1)} .cell.p2{background:var(--s2)} .cell.p3{background:var(--s3)} .cell.p4{background:var(--s4)}
+.cell.er{background:var(--serase)}
+.cell.clr{box-shadow:inset 0 0 0 2px var(--accent)}
+.prevnote{font-size:12.5px;padding:6px 10px;border-radius:6px;background:var(--ok-bg);color:var(--ok-ink)}
+/* screenshot */
+.drop{border:1.5px dashed var(--line);border-radius:9px;padding:14px;text-align:center;color:var(--muted);background:var(--bg);line-height:1.7}
+.drop.over{border-color:var(--accent);color:var(--ink)}
+.drop b{color:var(--ink);font-weight:600}
+.filebtn{color:var(--accent);text-decoration:underline;cursor:pointer}
+#shotCanvas{max-width:100%;height:auto;border-radius:6px;display:block}
+#shotCanvas.picking{cursor:crosshair}
+.shotwrap{overflow-x:auto}
+/* hand */
+.hand{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.slot{border:1.5px dashed var(--line);border-radius:9px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:118px;cursor:pointer;background:var(--bg);min-width:0}
+.slot.target{border:2px solid var(--accent)}
+.slot.used{opacity:.45}
+.slot .lbl{font-size:12px;color:var(--muted);text-align:center}
+.slot .acts{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}
+.slot .acts button{font-size:11.5px;padding:2px 6px}
+.mini{display:grid;gap:2px}
+.mini i{display:block;border-radius:2px}
+.mini i.on{background:var(--cell-fill)}
+/* library */
+.lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.pc{border:1px solid var(--line);border-radius:8px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--bg);cursor:pointer;min-width:0}
+.pc:hover{border-color:var(--accent)}
+.pc .shape{min-height:62px;display:flex;align-items:center}
+.pc .meta{font-size:11.5px;color:var(--muted);text-align:center;line-height:1.35}
+.pc .meta b{color:var(--ink);font-weight:600;font-size:14px}
+.pc .ctl{display:flex;gap:3px}
+.pc .ctl button{padding:0 6px;font-size:12px}
+.bar{height:4px;width:100%;background:var(--line);border-radius:2px;overflow:hidden}
+.bar > span{display:block;height:100%;background:var(--accent)}
+/* plan */
+.steps{display:flex;flex-direction:column;gap:6px}
+.step{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px;cursor:pointer;background:var(--bg)}
+.step.sel{border-color:var(--ink)}
+.chip{font-family:var(--f-mono);font-size:12px;min-width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;flex:none}
+.step .txt{flex:1;min-width:0}
+.tag{display:inline-block;font-size:11.5px;padding:0 6px;border-radius:9px;background:var(--ok-bg);color:var(--ok-ink);margin-left:4px}
+.tag.warn{background:var(--warn-bg);color:var(--warn-ink)}
+.turn{font-weight:600}
+.banner{padding:10px 12px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.banner.ok{background:var(--ok-bg);color:var(--ok-ink)}
+.counter{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--bg)}
+.counter b{font-family:var(--f-mono);min-width:18px;text-align:center}
+.counter button{padding:0 7px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}
+th{font-weight:500;color:var(--muted);font-size:12px}
+.tblwrap{overflow-x:auto}
+details>summary{cursor:pointer;font-family:var(--f-display);font-size:18px}
+.wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 14px}
+.wgrid label{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px}
+.editor{display:grid;gap:2px;width:max-content}
+.editor i{width:24px;height:24px;background:var(--cell-empty);border-radius:3px;cursor:pointer;display:block;border:1px solid var(--line)}
+.editor i.on{background:var(--cell-fill)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;background:var(--c)}
+@media (prefers-reduced-motion:no-preference){.cell{transition:background .12s}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>블럭 배치 솔버</h1>
+    <p>게임 화면을 붙여넣거나 판과 손패를 입력하면 놓는 순서·위치·회전을 계산합니다. 판은 다음 턴으로 이어지고, 블럭 출현 확률은 계속 학습합니다.</p>
+  </header>
+
+  <div id="abilBanner"></div>
+
+  <div class="layout">
+    <div class="col">
+      <section class="panel">
+        <div class="row between">
+          <h2>게임판</h2>
+          <span class="muted small num" id="boardInfo"></span>
+        </div>
+        <div class="row" role="group" aria-label="판 편집 모드">
+          <button id="m-paint" data-mode="paint">칸 칠하기</button>
+          <button id="m-abil" data-mode="abil">능력칸 ⊙/⇄</button>
+          <button id="m-erase" data-mode="erase">점찍기 사용</button>
+          <button id="b-undo">되돌리기</button>
+          <button id="b-clear">판 비우기</button>
+        </div>
+        <div id="prevNote"></div>
+        <div class="board" id="board"></div>
+        <div class="legend">
+          <span style="--c:var(--cell-fill)">채워진 칸</span>
+          <span style="--c:var(--s1)">1번째</span><span style="--c:var(--s2)">2번째</span><span style="--c:var(--s3)">3번째</span>
+          <span style="--c:var(--accent)">제거될 줄(테두리)</span>
+          <span style="--c:var(--ab-e)">⊙ 점찍기 칸</span><span style="--c:var(--ab-r)">⇄ 바꿔뽑기 칸</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>보유 능력</h2>
+        <div class="row">
+          <div class="counter">점찍기 <button data-ab="erase" data-d="-1" aria-label="점찍기 감소">−</button><b id="c-erase">0</b><button data-ab="erase" data-d="1" aria-label="점찍기 증가">+</button></div>
+          <div class="counter">바꿔뽑기 <button data-ab="reroll" data-d="-1" aria-label="바꿔뽑기 감소">−</button><b id="c-reroll">0</b><button data-ab="reroll" data-d="1" aria-label="바꿔뽑기 증가">+</button></div>
+        </div>
+        <div class="row">
+          <div class="counter">다음 능력 획득까지 <button data-ab="toNext" data-d="-1" aria-label="감소">−</button><b id="c-next">7</b><button data-ab="toNext" data-d="1" aria-label="증가">+</button>번</div>
+          <span class="small muted">보유 <b class="num" id="c-held">0/7</b></span>
+        </div>
+        <div class="small muted">게임 화면의 숫자와 다르면 −/+로 맞춰주세요. 배치 7번마다 판에 능력칸(⊙ 점찍기 / ⇄ 바꿔뽑기)이 생기고, 그 줄을 지우면 해당 능력을 얻습니다. 능력칸 모드에서 칸을 누르면 ⊙ → ⇄ → 없음 순서로 바뀝니다.</div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel" id="shotPanel">
+        <div class="row between"><h2>스크린샷으로 맞추기</h2><span class="small muted">판 + 손패 자동 인식</span></div>
+        <div class="drop" id="drop" tabindex="0">게임 화면을 캡처(<kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>)한 뒤 이 페이지를 한 번 누르고 <kbd>Ctrl</kbd>+<kbd>V</kbd><br>이미지를 끌어다 놓거나 <label class="filebtn" for="shotFile">파일 선택</label>도 됩니다<input type="file" id="shotFile" accept="image/*" hidden></div>
+        <div id="shotResult" hidden>
+          <div class="col" style="gap:8px">
+            <div id="shotMsg"></div>
+            <div class="shotwrap"><canvas id="shotCanvas" width="10" height="10"></canvas></div>
+            <div class="row">
+              <button id="b-manual">판 위치 직접 지정</button>
+              <button id="b-shotHide">인식 화면 접기</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row between">
+          <h2>손패</h2>
+          <span class="small muted">슬롯을 고른 뒤 아래 라이브러리에서 블럭을 누르세요</span>
+        </div>
+        <div id="askBox"></div>
+        <div class="hand" id="hand"></div>
+        <div class="row">
+          <button class="primary" id="b-solve">최적해 계산</button>
+          <button id="b-reroll">바꿔뽑기 분석</button>
+          <span class="small muted" id="status"></span>
+        </div>
+      </section>
+
+      <section class="panel" id="planPanel" hidden>
+        <div class="row between"><h2>추천 배치</h2><span class="small muted num" id="planScore"></span></div>
+        <div id="planMsg"></div>
+        <div class="steps" id="steps"></div>
+        <div class="row">
+          <button class="primary" id="b-applyAll">전부 놓았어요 · 판에 반영</button>
+          <button id="b-apply1">1단계만 놓았어요</button>
+        </div>
+        <div class="small muted">게임에 놓은 뒤 누르면 판이 갱신되고 다음 손패를 받을 준비가 됩니다. 다음 턴 스크린샷을 붙여넣어도 자동으로 이어집니다.</div>
+      </section>
+
+      <section class="panel" id="rerollPanel" hidden>
+        <h2>바꿔뽑기 분석</h2>
+        <div id="rerollOut"></div>
+      </section>
+
+      <section class="panel">
+        <div class="row between"><h2>블럭 라이브러리</h2><span class="small muted" id="libInfo"></span></div>
+        <div class="lib" id="lib"></div>
+        <p class="small muted" style="margin:0">숫자는 지금까지 본 횟수, 막대는 추정 출현 확률입니다. 확률은 다음 블럭이 들어갈 자리 평가와 바꿔뽑기 기대값에 쓰입니다. −/+로 잘못 센 횟수를 고칠 수 있습니다.</p>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>새 블럭 추가</summary>
+          <div class="row" style="margin-top:10px;align-items:flex-start;gap:16px">
+            <div class="editor" id="editor"></div>
+            <div class="col" style="gap:8px">
+              <label class="small">이름 <input type="text" id="newName" placeholder="예: ㅎ"></label>
+              <div class="row"><button class="primary" id="b-addPiece">라이브러리에 추가</button><button id="b-edClear">지우기</button></div>
+              <span class="small muted">칸을 눌러 모양을 그리세요. 회전·반전은 자동으로 고려합니다. 스크린샷에서 처음 보는 블럭은 자동으로 추가됩니다.</span>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>설정 · 평가 가중치</summary>
+          <div class="col" style="gap:12px;margin-top:10px">
+            <div class="row">
+              <label class="small">가로 칸 <input type="number" id="setW" min="4" max="24"></label>
+              <label class="small">세로 칸 <input type="number" id="setH" min="4" max="30"></label>
+              <label class="small"><input type="checkbox" id="setGrav"> 줄 제거 후 윗줄이 내려옴</label>
+            </div>
+            <div class="row">
+              <label class="small">탐색 폭(빔) <input type="number" id="setBeam" min="20" max="1000"></label>
+              <label class="small"><input type="checkbox" id="setUseErase"> 계산 때 점찍기 사용 고려</label>
+            </div>
+            <div class="row">
+              <label class="small">게임의 회전 버튼 <select id="setRot"><option value="cw">시계 방향</option><option value="ccw">반시계 방향</option></select></label>
+              <label class="small">반전 버튼 <select id="setFlip"><option value="h">좌우 뒤집기</option><option value="v">상하 뒤집기</option></select></label>
+            </div>
+            <div class="wgrid" id="weights"></div>
+            <div class="row"><button id="b-resetW">가중치 기본값</button><button id="b-resetCounts">출현 횟수 초기화</button><button id="b-resetCal">저장된 판 위치 지우기</button></div>
+            <div class="row"><button id="b-export">내가 추가한 블럭 복사</button><span class="small muted" id="exportMsg">복사한 내용을 Claude에게 붙여넣으면 기본 블럭으로 넣어줍니다.</span></div>
+            <textarea id="exportBox" readonly hidden style="width:100%;min-height:70px;font-family:var(--f-mono);font-size:12px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px"></textarea>
+          </div>
+        </details>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script id="engine">
+/* ===== 계산 엔진 (메인 스레드와 워커가 공유) ===== */
+var G={W:10,H:16,FULL:1023,grav:false};
+function setG(W,H,grav){G={W:W,H:H,FULL:(1<<W)-1,grav:!!grav};}
+function pc(x){x=x-((x>>>1)&0x55555555);x=(x&0x33333333)+((x>>>2)&0x33333333);return (((x+(x>>>4))&0x0F0F0F0F)*0x01010101)>>>24;}
+function normCells(cells){var mr=1e9,mc=1e9;cells.forEach(function(p){mr=Math.min(mr,p[0]);mc=Math.min(mc,p[1]);});
+  return cells.map(function(p){return [p[0]-mr,p[1]-mc];}).sort(function(a,b){return a[0]-b[0]||a[1]-b[1];});}
+function mkOrient(cells){var h=0,w=0;cells.forEach(function(p){h=Math.max(h,p[0]+1);w=Math.max(w,p[1]+1);});
+  var rows=[];for(var i=0;i<h;i++)rows.push(0);cells.forEach(function(p){rows[p[0]]|=1<<p[1];});
+  return {cells:cells,h:h,w:w,rows:rows,n:cells.length};}
+function orientations(cells){var out=[],seen={},cur=cells;
+  for(var f=0;f<2;f++){for(var k=0;k<4;k++){var n=normCells(cur),key=JSON.stringify(n);
+      if(!seen[key]){seen[key]=1;out.push(mkOrient(n));}cur=cur.map(function(p){return [p[1],-p[0]];});}
+    cur=cells.map(function(p){return [p[0],-p[1]];});}
+  return out;}
+var DOT=null;function canPlace(b,o,r,c){for(var i=0;i<o.h;i++)if(b[r+i]&(o.rows[i]<<c))return false;return true;}
+function doPlace(b,ab,o,r,c){var nb=b.slice(),i;for(i=0;i<o.h;i++)nb[r+i]|=o.rows[i]<<c;
+  var full=[];for(i=0;i<G.H;i++)if(nb[i]===G.FULL)full.push(i);
+  if(!full.length)return {b:nb,ab:ab,lines:0,abG:0,rows:full};
+  var abG=0;full.forEach(function(rr){abG+=pc(ab[rr]);});
+  var nab;
+  if(G.grav){var kb=[],ka=[];for(i=0;i<G.H;i++)if(nb[i]!==G.FULL){kb.push(nb[i]);ka.push(ab[i]);}
+    while(kb.length<G.H){kb.unshift(0);ka.unshift(0);}nb=kb;nab=ka;}
+  else{nab=ab.slice();full.forEach(function(rr){nb[rr]=0;nab[rr]=0;});}
+  return {b:nb,ab:nab,lines:full.length,abG:abG,rows:full};}
+function evalBoard(b,wt,ab){var W=G.W,H=G.H,F=G.FULL,iso=0,rowT=0,colT=0,filled=0,conc=0,nonE=0,near=0,mW=(1<<(W+1))-1;
+  for(var r=0;r<H;r++){var x=b[r],f=pc(x);filled+=f;if(f){nonE++;conc+=f*f;}
+    var y=((x<<1)|1)|(1<<(W+1));rowT+=pc((y^(y>>>1))&mW);
+    var up=r?b[r-1]:F,dn=r<H-1?b[r+1]:F;colT+=pc(x^up);
+    var e=~x&F,L=((x<<1)|1)&F,R=(x>>>1)|(1<<(W-1));iso+=pc(e&up&dn&L&R);
+    if(ab&&ab[r])near+=f*f;}
+  colT+=pc(b[H-1]^F);
+  return -wt.iso*iso-wt.rowT*rowT-wt.colT*colT-wt.filled*filled+wt.conc*conc/W-wt.rows*nonE+(wt.abilNear||0)*near/(W*W);}
+function leafExtra(b,lib,wt){var H=G.H,W=G.W,cov=new Float64Array(H*W),fitPen=0;
+  for(var j=0;j<lib.length;j++){var L=lib[j];if(L.prob<=0)continue;var cm=new Int32Array(H),any=false;
+    for(var oi=0;oi<L.os.length;oi++){var o=L.os[oi];
+      for(var r=0;r<=H-o.h;r++)for(var c=0;c<=W-o.w;c++)if(canPlace(b,o,r,c)){any=true;for(var i=0;i<o.h;i++)cm[r+i]|=o.rows[i]<<c;}}
+    if(!any)fitPen+=L.prob;
+    for(var r2=0;r2<H;r2++){var m=cm[r2];while(m){var lb=m&-m,cc=31-Math.clz32(lb);cov[r2*W+cc]+=L.prob;m^=lb;}}}
+  var dead=0;for(var r3=0;r3<H;r3++){var e=~b[r3]&G.FULL;while(e){var lb2=e&-e,c2=31-Math.clz32(lb2);dead+=Math.max(0,1-cov[r3*W+c2]);e^=lb2;}}
+  return -wt.dead*dead-wt.fit*fitPen;}
+function gainOf(res,wt){return res.lines*wt.line+Math.max(0,res.lines-1)*wt.multi+res.abG*wt.abil;}
+function pathOf(s){var m=[];while(s&&s.move){m.unshift(s.move);s=s.parent;}return m;}
+function search(p){
+  DOT=mkOrient([[0,0]]);
+  var wt=p.wt,hand=p.hand.map(function(h){return {os:orientations(h.cells),key:JSON.stringify(normCells(h.cells))};});
+  var lib=p.lib.map(function(l){return {os:orientations(l.cells),prob:l.prob};});
+  var n=hand.length,all=(1<<n)-1,E=p.erases||0;
+  var s0={b:p.board.slice(),ab:p.abil.slice(),used:0,er:0,g:0,parent:null,move:null,placed:0};s0.f=evalBoard(s0.b,wt,s0.ab);
+  var beam=[s0],finished=[],best=s0;
+  for(var lv=0;lv<n+E&&beam.length;lv++){
+    var next=new Map();
+    var push=function(s){var k=s.used+'|'+s.er+'|'+s.b.join(',');var o=next.get(k);if(!o||o.f<s.f)next.set(k,s);};
+    for(var si=0;si<beam.length;si++){var s=beam[si],tried={};
+      for(var i=0;i<n;i++){if((s.used>>i)&1)continue;if(tried[hand[i].key])continue;tried[hand[i].key]=1;
+        var os=hand[i].os;
+        for(var oi=0;oi<os.length;oi++){var o=os[oi];
+          for(var r=0;r<=G.H-o.h;r++)for(var c=0;c<=G.W-o.w;c++){if(!canPlace(s.b,o,r,c))continue;
+            var res=doPlace(s.b,s.ab,o,r,c),g=s.g+gainOf(res,wt);
+            var ns={b:res.b,ab:res.ab,used:s.used|(1<<i),er:s.er,g:g,parent:s,placed:s.placed+1,
+              move:{t:'p',i:i,oi:oi,r:r,c:c,lines:res.lines,abG:res.abG}};
+            ns.f=g+evalBoard(ns.b,wt,ns.ab);
+            if(ns.placed>best.placed||(ns.placed===best.placed&&ns.f>best.f))best=ns;
+            if(ns.used===all)finished.push(ns);else push(ns);}}}
+      if(s.er<E){for(var r2=0;r2<G.H;r2++){var x=~s.b[r2]&G.FULL;while(x){var lb=x&-x,c2=31-Math.clz32(lb);x^=lb;
+        var rs=doPlace(s.b,s.ab,DOT,r2,c2),eg=s.g-wt.erase+gainOf(rs,wt);
+        var es={b:rs.b,ab:rs.ab,used:s.used,er:s.er+1,g:eg,parent:s,placed:s.placed,move:{t:'e',r:r2,c:c2,lines:rs.lines,abG:rs.abG}};
+        es.f=eg+evalBoard(rs.b,wt,rs.ab);push(es);}}}}
+    var groups={};next.forEach(function(v){(groups[v.er]=groups[v.er]||[]).push(v);});
+    beam=[];Object.keys(groups).forEach(function(k){var arr=groups[k].sort(function(a,b){return b.f-a.f;});beam=beam.concat(arr.slice(0,p.beam));});
+  }
+  if(!finished.length){return {ok:false,placed:best.placed,moves:pathOf(best),score:best.f+leafExtra(best.b,lib,wt)-1000*(n-best.placed)};}
+  finished.sort(function(a,b){return b.f-a.f;});
+  var seen={},top=[];for(var q=0;q<finished.length&&top.length<p.leafK;q++){var k=finished[q].b.join(',');if(seen[k])continue;seen[k]=1;top.push(finished[q]);}
+  top.forEach(function(s){s.F=s.f+leafExtra(s.b,lib,wt);});
+  top.sort(function(a,b){return b.F-a.F;});
+  var alts=[],firstSeen={};
+  for(var t=0;t<top.length&&alts.length<3;t++){var mv=pathOf(top[t]),fk=JSON.stringify(mv[0]);if(firstSeen[fk])continue;firstSeen[fk]=1;alts.push({score:top[t].F,moves:mv});}
+  return {ok:true,placed:n,moves:alts[0].moves,score:alts[0].score,alts:alts};
+}
+function rerollAnalysis(p,progress){
+  var base=search(p),out=[],total=0,done=0;
+  p.lib.forEach(function(l){if(l.prob>0)total++;});total*=p.hand.length;
+  var q={};for(var k in p)q[k]=p[k];q.beam=p.rbeam;q.leafK=60;
+  for(var i=0;i<p.hand.length;i++){var ev=0,rows=[];
+    for(var j=0;j<p.lib.length;j++){var L=p.lib[j];if(L.prob<=0)continue;
+      var h=p.hand.slice();h[i]={slot:p.hand[i].slot,cells:L.cells};q.hand=h;
+      var r=search(q);ev+=L.prob*r.score;rows.push({j:j,score:r.score,ok:r.ok});done++;if(progress)progress(done/total);}
+    out.push({i:i,slot:p.hand[i].slot,ev:ev,rows:rows});}
+  return {base:base.score,baseOk:base.ok,out:out};
+}
+if(typeof document==='undefined'){self.onmessage=function(e){var d=e.data;setG(d.p.W,d.p.H,d.p.grav);
+  if(d.type==='solve')self.postMessage({id:d.id,type:'done',res:search(d.p)});
+  else self.postMessage({id:d.id,type:'done',res:rerollAnalysis(d.p,function(x){self.postMessage({id:d.id,type:'progress',x:x});})});};}
+</script>
+
+<script>
+/* ===== 데이터 ===== */
+var BUILTIN=[
+ ['b1','ㅌ',["##","#.","##","#.","##"]],['b2','ㄹ',["##",".#","##","#.","##"]],['b3','ㅏ',["#.","##","#."]],
+ ['b4','ㄱ',["##",".#",".#"]],['b5','ㅣ',["#","#","#","#","#"]],['b6','ㆍ',["#"]],['b7','ㅡ',["###"]],
+ ['b8','ㅁ',["###","#.#","###"]],['b9','ㅍ',["####",".##.","####"]],['b10','ㄷ',["##","#.","##"]],
+ ['b11','ㅊ',[".#.","###",".#.","#.#"]],['b12','ㄴ',["#.","##"]],['b13','ㅈ',["###",".#.","#.#"]],
+ ['b14','ㅋ',["##",".#","##",".#"]],['b15','ㅑ',["#.","##","#.","##","#."]],['b16','ㅂ',["#.#","###","#.#","###"]],
+ ['b17','ㅅ',[".#.","#.#"]],['b18','ㅎ',["..#..","#####",".#.#.","..#.."]],['b19','ㅇ',[".#.","#.#",".#."]]];
+function cellsFromRows(rows){var c=[];rows.forEach(function(s,r){for(var i=0;i<s.length;i++)if(s[i]==='#')c.push([r,i]);});return c;}
+function canon(cells){var ks=orientations(cells).map(function(o){return JSON.stringify(o.cells);});ks.sort();return ks[0];}
+function esc(s){return String(s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});}
+var WDEF={line:20,multi:10,abil:15,abilNear:8,dead:3,fit:80,iso:4,rowT:0.6,colT:0.6,conc:1,rows:0.5,filled:0.3,erase:25};
+var WLBL={line:'줄 제거 (1줄당)',multi:'동시 제거 보너스 (추가 줄당)',abil:'능력칸 줄 제거 (능력 1개당)',abilNear:'능력칸 있는 줄 미리 채우기',dead:'못 쓰게 된 빈칸 (확률 가중)',fit:'다음 블럭이 안 들어갈 위험',
+  iso:'고립된 1칸 구멍',rowT:'가로 들쭉날쭉',colT:'세로 들쭉날쭉',conc:'한 줄에 몰아 채우기',rows:'걸쳐 있는 줄 수',filled:'채워진 칸 수',erase:'점찍기 사용 비용 (아끼는 정도)'};
+var KEY='block-solver-v1';
+function blankHand(){return [0,1,2].map(function(){return {pid:null,counted:false,used:false,cur:null};});}
+function exampleState(){
+  var S={W:10,H:16,grav:false,beam:200,useErase:true,mode:'paint',erase:0,reroll:0,placements:0,toNext:7,pendingAbil:0,spawnNote:false,totalLines:0,target:0,example:true,
+    rotDir:'cw',flipAxis:'h',cal:null,wt:Object.assign({},WDEF),
+    lib:BUILTIN.map(function(b){return {id:b[0],name:b[1],cells:cellsFromRows(b[2]),builtin:true,count:0};}),
+    hand:[{pid:'b8',counted:false,used:false,cur:null},{pid:'b3',counted:false,used:false,cur:null},{pid:'b7',counted:false,used:false,cur:null}]};
+  S.board=[];S.abil=[];S.abilR=[];for(var r=0;r<16;r++){S.board.push(0);S.abil.push(0);S.abilR.push(0);}
+  var ex={15:"######.###",14:"#####...##",13:"##.......#",12:"#........."};
+  Object.keys(ex).forEach(function(r){var s=ex[r],m=0;for(var c=0;c<10;c++)if(s[c]==='#')m|=1<<c;S.board[r]=m;});
+  S.abil[14]=1<<6;return S;}
+function migrate(S){
+  if(!S.lib)S.lib=[];
+  var keys={};S.lib.forEach(function(l){keys[canon(l.cells)]=l;});
+  BUILTIN.forEach(function(b,i){var ex=null;S.lib.forEach(function(l){if(l.id===b[0])ex=l;});
+    if(ex){if(ex.name===String(i+1))ex.name=b[1];ex.builtin=true;return;}
+    var cells=cellsFromRows(b[2]),same=keys[canon(cells)];
+    if(same){if(/^새 \d+칸$/.test(same.name))same.name=b[1];same.builtin=true;return;}
+    S.lib.push({id:b[0],name:b[1],cells:cells,builtin:true,count:0});});
+  if(S.toNext==null)S.toNext=7-((S.placements||0)%7);
+  if(!S.rotDir)S.rotDir='cw';if(!S.flipAxis)S.flipAxis='h';if(S.cal===undefined)S.cal=null;
+  if(!S.hand||S.hand.length!==3)S.hand=blankHand();
+  S.hand.forEach(function(h){if(h.cur===undefined)h.cur=null;});
+  S.wt=Object.assign({},WDEF,S.wt||{});
+  if(!S.abil||S.abil.length!==S.H)S.abil=S.board.map(function(){return 0;});
+  if(!S.abilR||S.abilR.length!==S.H)S.abilR=S.board.map(function(){return 0;});
+  S.pendingAbil=0;if(S.spawnNote==null)S.spawnNote=false;
+  return S;}
+var S;try{S=JSON.parse(localStorage.getItem(KEY));}catch(e){S=null;}
+if(!S||!S.board)S=exampleState();else S=migrate(S);
+var undoStack=[],plan=null,preview=0,rerollRes=null,busy=false,gen=0,ask=null,rerollSlot=-1,shot=null;
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function snap(){undoStack.push(JSON.stringify(S));if(undoStack.length>60)undoStack.shift();}
+function libById(id){for(var i=0;i<S.lib.length;i++)if(S.lib[i].id===id)return S.lib[i];return null;}
+function probs(){var tot=0;S.lib.forEach(function(l){tot+=l.count+1;});var m={};S.lib.forEach(function(l){m[l.id]=(l.count+1)/tot;});return m;}
+function $(id){return document.getElementById(id);}
+
+/* ===== 워커 ===== */
+var worker=null,jobId=0,jobs={},pending=0;
+function makeWorker(){try{worker=new Worker(URL.createObjectURL(new Blob([$('engine').textContent],{type:'text/javascript'})));
+  worker.onmessage=function(e){var j=jobs[e.data.id];if(!j)return;if(e.data.type==='progress'){j.prog&&j.prog(e.data.x);}else{delete jobs[e.data.id];pending--;refreshBusy();j.done(e.data.res);}};
+  worker.onerror=function(){worker=null;};}catch(e){worker=null;}}
+makeWorker();
+function refreshBusy(){busy=pending>0;$('b-solve').disabled=busy;$('b-reroll').disabled=busy;}
+function run(type,p,done,prog){pending++;refreshBusy();
+  if(worker){var id=++jobId;jobs[id]={done:done,prog:prog};worker.postMessage({id:id,type:type,p:p});}
+  else setTimeout(function(){setG(p.W,p.H,p.grav);var r=type==='solve'?search(p):rerollAnalysis(p,null);pending--;refreshBusy();done(r);},20);}
+function invalidate(){plan=null;rerollRes=null;preview=0;gen++;ask=null;
+  if(pending>0&&worker){worker.terminate();jobs={};pending=0;makeWorker();refreshBusy();$('status').textContent='';}}
+
+function miniShape(cells,size,color){var o=mkOrient(normCells(cells)),h='';var on={};o.cells.forEach(function(p){on[p[0]+','+p[1]]=1;});
+  for(var r=0;r<o.h;r++)for(var c=0;c<o.w;c++)h+='<i class="'+(on[r+','+c]?'on':'')+'" style="width:'+size+'px;height:'+size+'px'+(on[r+','+c]&&color?';background:'+color:'')+'"></i>';
+  return '<div class="mini" style="grid-template-columns:repeat('+o.w+','+size+'px)">'+h+'</div>';}
+
+/* ===== 회전·반전 버튼 횟수 ===== */
+function pressesFor(cur,target){
+  var key=function(cs){return JSON.stringify(normCells(cs));},tk=key(target);
+  var rot=function(cs){return cs.map(function(p){return S.rotDir==='cw'?[p[1],-p[0]]:[-p[1],p[0]];});};
+  var flip=function(cs){return cs.map(function(p){return S.flipAxis==='h'?[p[0],-p[1]]:[-p[0],p[1]];});};
+  var best=null,consider=function(c){if(!best||c.n<best.n)best=c;};
+  var x=cur,k;for(k=0;k<4;k++){if(key(x)===tk)consider({flip:0,rot:k,order:'',n:k});x=rot(x);}
+  x=flip(cur);for(k=0;k<4;k++){if(key(x)===tk)consider({flip:1,rot:k,order:'fr',n:k+1});x=rot(x);}
+  x=cur;for(k=0;k<4;k++){if(key(flip(x))===tk)consider({flip:1,rot:k,order:'rf',n:k+1});x=rot(x);}
+  return best;}
+function pressText(b){if(!b)return '';if(!b.n)return '돌리지 않고 그대로';
+  var r=b.rot?'회전 '+b.rot+'번':'',f='반전 1번';
+  if(!b.flip)return r;if(!b.rot)return f;return b.order==='fr'?f+' → '+r:r+' → '+f;}
+
+/* ===== 판 ===== */
+function simulatePlan(){
+  setG(S.W,S.H,S.grav);var b=S.board.slice(),ab=S.abil.slice(),abR=S.abilR.slice();plan.frames=[];
+  plan.moves.forEach(function(m){var fr={b:b,ab:ab,abR:abR,m:m,cells:[],rows:[],gainE:0,gainR:0};
+    var o=m.t==='e'?mkOrient([[0,0]]):orientations(libById(S.hand[m.slot].pid).cells)[m.oi];fr.o=o;
+    {
+      o.cells.forEach(function(p){fr.cells.push([p[0]+m.r,p[1]+m.c]);});
+      var res=doPlace(b,ab,o,m.r,m.c),resR=doPlace(b,abR,o,m.r,m.c);fr.rows=res.rows;fr.res=res;
+      fr.gainR=resR.abG;fr.gainE=res.abG-resR.abG;b=res.b;ab=res.ab;abR=resR.ab;}
+    fr.after=b;fr.afterAb=ab;fr.afterAbR=abR;plan.frames.push(fr);});
+  plan.final=b;}
+function renderBoard(){var el=$('board');el.style.gridTemplateColumns='repeat('+S.W+',1fr)';
+  var b=S.board,ab=S.abil,abR=S.abilR,hl={},clr={},fr=null,stepCls='';
+  if(plan&&plan.frames&&plan.frames.length){fr=plan.frames[Math.min(preview,plan.frames.length-1)];b=fr.b;ab=fr.ab;abR=fr.abR;
+    var idx=plan.frames.indexOf(fr);stepCls=fr.m.t==='e'?'er':'p'+Math.min(4,idx+1);
+    fr.cells.forEach(function(p){hl[p[0]+','+p[1]]=1;});fr.rows.forEach(function(r){clr[r]=1;});}
+  var h='';for(var r=0;r<S.H;r++)for(var c=0;c<S.W;c++){var cls='cell';
+    if(b[r]>>c&1)cls+=' f';if(ab[r]>>c&1)cls+=(abR[r]>>c&1)?' ab-r':' ab-e';if(hl[r+','+c])cls+=' '+stepCls;if(clr[r])cls+=' clr';
+    h+='<div class="'+cls+'" data-r="'+r+'" data-c="'+c+'"></div>';}
+  el.innerHTML=h;
+  var filled=0;S.board.forEach(function(x){filled+=pc(x);});
+  $('boardInfo').textContent=S.W+'×'+S.H+' · 채움 '+filled+'칸 · 제거한 줄 '+S.totalLines;
+  $('prevNote').innerHTML=fr?'<div class="prevnote">'+(plan.frames.indexOf(fr)+1)+'단계 미리보기: 색칠된 위치에 놓으세요'+(fr.rows.length?' · 테두리 줄 '+fr.rows.length+'개 제거':'')+'</div>':
+    (S.example?'<div class="prevnote">예시 판과 손패입니다. 스크린샷을 붙여넣거나 실제 게임 화면대로 칸을 칠하세요.</div>':'');
+  ['paint','abil','erase'].forEach(function(m){$('m-'+m).classList.toggle('on',S.mode===m);});}
+var painting=null;
+function cellAt(e){var t=document.elementFromPoint(e.clientX,e.clientY);return t&&t.classList&&t.classList.contains('cell')?t:null;}
+function touchCell(t,start){var r=+t.dataset.r,c=+t.dataset.c,bit=1<<c;
+  if(start){snap();if(plan)invalidate();S.example=false;}
+  if(S.mode==='paint'){if(start)painting=!(S.board[r]&bit);if(painting)S.board[r]|=bit;else S.board[r]&=~bit;}
+  else if(S.mode==='abil'&&start){if(!(S.abil[r]&bit)){S.abil[r]|=bit;S.abilR[r]&=~bit;}else if(!(S.abilR[r]&bit))S.abilR[r]|=bit;else{S.abil[r]&=~bit;S.abilR[r]&=~bit;}S.spawnNote=false;}
+  else if(S.mode==='erase'&&start){if(!(S.board[r]&bit)){setG(S.W,S.H,S.grav);var rs=doPlace(S.board,S.abil,mkOrient([[0,0]]),r,c),rR=doPlace(S.board,S.abilR,mkOrient([[0,0]]),r,c);S.board=rs.b;S.abil=rs.ab;S.abilR=rR.ab;S.totalLines+=rs.lines;if(S.erase>0)S.erase--;if(rR.abG)grant('reroll',rR.abG);if(rs.abG-rR.abG)grant('erase',rs.abG-rR.abG);}}
+  rerollRes=null;renderAll();
+  if(start&&S.mode==='abil'&&activeHand().length)solve();}
+$('board').addEventListener('pointerdown',function(e){var t=cellAt(e);if(!t)return;e.preventDefault();touchCell(t,true);
+  var move=function(ev){if(S.mode!=='paint')return;var t2=cellAt(ev);if(t2)touchCell(t2,false);};
+  var up=function(){painting=null;window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);save();};
+  window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);});
+document.querySelectorAll('[data-mode]').forEach(function(b){b.onclick=function(){S.mode=b.dataset.mode;renderBoard();save();};});
+$('b-undo').onclick=function(){if(!undoStack.length)return;S=JSON.parse(undoStack.pop());invalidate();renderAll();save();};
+$('b-clear').onclick=function(){snap();for(var r=0;r<S.H;r++){S.board[r]=0;S.abil[r]=0;S.abilR[r]=0;}S.example=false;invalidate();renderAll();save();};
+
+/* ===== 능력 ===== */
+document.querySelectorAll('[data-ab]').forEach(function(b){b.onclick=function(){var k=b.dataset.ab,d=+b.dataset.d;
+  if(k==='toNext')S.toNext=Math.max(1,Math.min(7,S.toNext+d));else S[k]=Math.max(0,S[k]+d);renderAll();save();};});
+function renderAbil(){$('c-erase').textContent=S.erase;$('c-reroll').textContent=S.reroll;$('c-next').textContent=S.toNext;
+  var held=S.erase+S.reroll;$('c-held').textContent=held+'/7';
+  var bn=$('abilBanner');
+  if(S.spawnNote){
+    bn.innerHTML='<div class="banner"><b>배치 7번 완료</b><span>판 어딘가에 능력칸이 생겼을 거예요. 스크린샷을 붙여넣거나 능력칸 모드로 그 칸을 눌러 표시하세요.</span><button id="spawn-mark">능력칸 표시하기</button><button id="spawn-ok">닫기</button></div>';
+    $('spawn-mark').onclick=function(){S.mode='abil';S.spawnNote=false;renderAll();save();};
+    $('spawn-ok').onclick=function(){S.spawnNote=false;renderAll();save();};}
+  else bn.innerHTML='';}
+
+/* ===== 손패 ===== */
+function guard(action){if(plan&&plan.frames&&plan.frames.length){ask=action;renderHand();return;}action();}
+function renderHand(){var h='';S.hand.forEach(function(s,i){var p=s.pid&&libById(s.pid);
+  h+='<div class="slot'+(S.target===i?' target':'')+(s.used?' used':'')+'" data-slot="'+i+'"><span class="lbl">슬롯 '+(i+1)+(s.used?' · 배치됨':'')+(rerollSlot===i?' · 바꿀 블럭 선택':'')+'</span>'+
+   (p?miniShape(s.cur||p.cells,11)+'<span class="small"><b>'+esc(p.name)+'</b> '+p.cells.length+'칸</span>':'<span class="small muted" style="margin:auto 0">'+(s.used?'배치됨':'비어 있음')+'</span>')+
+   '<div class="acts">'+(p&&!s.used?'<button data-clr="'+i+'">비우기</button>':'')+(p&&!s.used&&S.reroll>0?'<button data-rr="'+i+'">바꿔뽑기</button>':'')+'</div></div>';});
+  var el=$('hand');el.innerHTML=h;
+  $('askBox').innerHTML=ask?'<div class="banner"><span><b>추천 배치를 게임에 놓았나요?</b> 놓았다면 판에 반영한 뒤 새 손패를 입력합니다.</span><button class="primary" id="ask-yes">놓았어요 · 판에 반영</button><button id="ask-no">아니요 · 손패만 고치기</button></div>':'';
+  if(ask){$('ask-yes').onclick=function(){var a=ask;ask=null;snap();applyAll();a();flushGain();};
+    $('ask-no').onclick=function(){var a=ask;invalidate();a();};}
+  el.querySelectorAll('[data-slot]').forEach(function(d){d.onclick=function(e){if(e.target.tagName==='BUTTON')return;S.target=+d.dataset.slot;rerollSlot=-1;renderHand();};});
+  el.querySelectorAll('[data-clr]').forEach(function(b){b.onclick=function(){var i=+b.dataset.clr;guard(function(){snap();S.hand[i]={pid:null,counted:false,used:false,cur:null};S.target=i;invalidate();renderAll();save();});};});
+  el.querySelectorAll('[data-rr]').forEach(function(b){b.onclick=function(){rerollSlot=+b.dataset.rr;S.target=rerollSlot;renderHand();};});}
+function assignPiece(pid){guard(function(){doAssign(pid);});}
+function doAssign(pid){snap();var i=S.target;if(i<0||i>2)i=0;
+  if(S.hand.every(function(s){return s.used||!s.pid;})&&S.hand.some(function(s){return s.used;}))S.hand=blankHand();
+  if(S.hand[i].used){i=S.hand.findIndex(function(s){return !s.used&&!s.pid;});if(i<0)i=S.hand.findIndex(function(s){return !s.used;});if(i<0){S.hand=blankHand();i=0;}}
+  if(rerollSlot===i&&S.reroll>0){S.reroll--;libById(pid).count++;S.hand[i]={pid:pid,counted:true,used:false,cur:null};rerollSlot=-1;}
+  else S.hand[i]={pid:pid,counted:false,used:false,cur:null};
+  S.example=false;var nx=S.hand.findIndex(function(s){return !s.pid&&!s.used;});S.target=nx>=0?nx:i;
+  var full=S.hand.every(function(s){return s.pid||s.used;});
+  invalidate();renderAll();save();
+  if(full&&activeHand().length)solve();}
+
+/* ===== 라이브러리 ===== */
+function renderLib(){var pr=probs(),h='';S.lib.forEach(function(l){var p=pr[l.id];
+  h+='<div class="pc" data-pid="'+l.id+'" tabindex="0"><div class="shape">'+miniShape(l.cells,9)+'</div>'+
+   '<div class="meta"><b>'+esc(l.name)+'</b> '+l.cells.length+'칸<br><span class="num">'+l.count+'회 · '+(p*100).toFixed(1)+'%</span></div>'+
+   '<div class="bar"><span style="width:'+Math.min(100,p*100*3)+'%"></span></div>'+
+   '<div class="ctl"><button data-cnt="'+l.id+'" data-d="-1" aria-label="횟수 감소">−</button><button data-cnt="'+l.id+'" data-d="1" aria-label="횟수 증가">+</button>'+(l.builtin?'':'<button data-ren="'+l.id+'">이름</button><button data-del="'+l.id+'">삭제</button>')+'</div></div>';});
+  var el=$('lib');el.innerHTML=h;
+  var tot=0;S.lib.forEach(function(l){tot+=l.count;});$('libInfo').textContent='기록된 블럭 '+tot+'개';
+  el.querySelectorAll('.pc').forEach(function(d){d.onclick=function(e){if(e.target.tagName==='BUTTON')return;assignPiece(d.dataset.pid);};
+    d.onkeydown=function(e){if(e.key==='Enter')assignPiece(d.dataset.pid);};});
+  el.querySelectorAll('[data-cnt]').forEach(function(b){b.onclick=function(){var l=libById(b.dataset.cnt);l.count=Math.max(0,l.count+(+b.dataset.d));renderLib();save();};});
+  el.querySelectorAll('[data-ren]').forEach(function(b){b.onclick=function(){var l=libById(b.dataset.ren),card=b.closest('.pc'),bEl=card.querySelector('.meta b');
+    var inp=document.createElement('input');inp.type='text';inp.value=l.name;inp.style.width='64px';inp.id='ren-'+l.id;inp.setAttribute('aria-label','블럭 이름');
+    bEl.replaceWith(inp);inp.focus();inp.select();var fin=false;
+    var done=function(keep){if(fin)return;fin=true;var v=inp.value.trim();if(keep&&v)l.name=v.slice(0,12);renderAll();save();};
+    inp.onkeydown=function(e){e.stopPropagation();if(e.key==='Enter')done(true);if(e.key==='Escape')done(false);};
+    inp.onblur=function(){done(true);};inp.onclick=function(e){e.stopPropagation();};};});
+  el.querySelectorAll('[data-del]').forEach(function(b){b.onclick=function(){var id=b.dataset.del;
+    if(S.hand.some(function(s){return s.pid===id;})){$('status').textContent='손패에 있는 블럭은 지울 수 없습니다.';return;}
+    S.lib=S.lib.filter(function(l){return l.id!==id;});renderLib();save();};});}
+
+/* ===== 새 블럭 편집기 ===== */
+var ED=5,ed=[];for(var i0=0;i0<ED*ED;i0++)ed.push(0);
+function renderEditor(){var el=$('editor');el.style.gridTemplateColumns='repeat('+ED+',24px)';
+  el.innerHTML=ed.map(function(v,i){return '<i class="'+(v?'on':'')+'" data-e="'+i+'"></i>';}).join('');
+  el.querySelectorAll('[data-e]').forEach(function(x){x.onclick=function(){ed[+x.dataset.e]^=1;renderEditor();};});}
+$('b-edClear').onclick=function(){ed=ed.map(function(){return 0;});renderEditor();};
+$('b-addPiece').onclick=function(){var cells=[];ed.forEach(function(v,i){if(v)cells.push([Math.floor(i/ED),i%ED]);});
+  if(!cells.length){$('status').textContent='블럭 모양을 먼저 그려주세요.';return;}
+  var key=canon(cells),dup=S.lib.filter(function(l){return canon(l.cells)===key;})[0];
+  if(dup){$('status').textContent='같은 모양이 이미 있습니다: '+dup.name;return;}
+  var nm=$('newName').value.trim()||('새 '+cells.length+'칸');
+  S.lib.push({id:'c'+Date.now(),name:nm,cells:normCells(cells),builtin:false,count:0});
+  ed=ed.map(function(){return 0;});$('newName').value='';renderEditor();renderLib();save();$('status').textContent='블럭 '+nm+'을(를) 추가했습니다.';};
+
+/* ===== 설정 ===== */
+function renderSettings(){$('setW').value=S.W;$('setH').value=S.H;$('setGrav').checked=S.grav;$('setBeam').value=S.beam;$('setUseErase').checked=S.useErase;
+  $('setRot').value=S.rotDir;$('setFlip').value=S.flipAxis;
+  $('weights').innerHTML=Object.keys(WDEF).map(function(k){return '<label>'+WLBL[k]+' <input type="number" step="0.1" id="w-'+k+'" data-w="'+k+'" value="'+S.wt[k]+'"></label>';}).join('');
+  $('weights').querySelectorAll('[data-w]').forEach(function(x){x.onchange=function(){var v=parseFloat(x.value);if(!isNaN(v)){S.wt[x.dataset.w]=v;invalidate();renderAll();save();}};});}
+function resize(){var W=Math.max(4,Math.min(24,+$('setW').value||10)),H=Math.max(4,Math.min(30,+$('setH').value||16));
+  if(W===S.W&&H===S.H)return;snap();S.W=W;S.H=H;S.board=[];S.abil=[];S.abilR=[];for(var r=0;r<H;r++){S.board.push(0);S.abil.push(0);S.abilR.push(0);}S.cal=null;invalidate();renderAll();save();}
+$('setW').onchange=resize;$('setH').onchange=resize;
+$('setGrav').onchange=function(){S.grav=this.checked;invalidate();renderAll();save();};
+$('setBeam').onchange=function(){S.beam=Math.max(20,Math.min(1000,+this.value||200));save();};
+$('setUseErase').onchange=function(){S.useErase=this.checked;save();};
+$('setRot').onchange=function(){S.rotDir=this.value;renderPlan();save();};
+$('setFlip').onchange=function(){S.flipAxis=this.value;renderPlan();save();};
+$('b-resetW').onclick=function(){S.wt=Object.assign({},WDEF);renderSettings();invalidate();renderAll();save();};
+$('b-resetCounts').onclick=function(){snap();S.lib.forEach(function(l){l.count=0;});renderLib();save();$('status').textContent='출현 횟수를 0으로 되돌렸습니다. 되돌리기로 복구할 수 있습니다.';};
+$('b-export').onclick=function(){var t=S.lib.filter(function(l){return !l.builtin;}).map(function(l){var o=mkOrient(normCells(l.cells)),rows=[];for(var r=0;r<o.h;r++){var x='';for(var c=0;c<o.w;c++)x+=(o.rows[r]>>c&1)?'#':'.';rows.push(x);}return l.name+' '+rows.join('/')+' ('+l.count+'회)';}).join('\n')||'(추가한 블럭 없음)';
+  var box=$('exportBox');box.hidden=false;box.value=t;box.select();
+  try{navigator.clipboard.writeText(t).then(function(){$('exportMsg').textContent='복사했습니다. Claude에게 붙여넣어 주세요.';},function(){$('exportMsg').textContent='아래 내용을 직접 복사해 주세요.';});}catch(e){$('exportMsg').textContent='아래 내용을 직접 복사해 주세요.';}};
+$('b-resetCal').onclick=function(){S.cal=null;save();$('status').textContent='저장된 판 위치를 지웠습니다.';};
+
+/* ===== 계산 ===== */
+function activeHand(){var a=[];S.hand.forEach(function(s,i){if(s.pid&&!s.used&&libById(s.pid))a.push({slot:i,cells:libById(s.pid).cells});});return a;}
+function payload(hand){var pr=probs(),wt=Object.assign({},S.wt);if(S.erase+S.reroll>=7){wt.abil=0;wt.abilNear=0;}
+  return {W:S.W,H:S.H,grav:S.grav,board:S.board.slice(),abil:S.abil.slice(),hand:hand,wt:wt,beam:S.beam,rbeam:Math.max(30,Math.round(S.beam/4)),leafK:300,
+    erases:S.useErase?Math.min(S.erase,2):0,lib:S.lib.map(function(l){return {cells:l.cells,prob:pr[l.id]};})};}
+function countHand(){S.hand.forEach(function(s){if(s.pid&&!s.counted&&libById(s.pid)){libById(s.pid).count++;s.counted=true;}});}
+function solve(){var hand=activeHand();if(!hand.length){$('status').textContent='손패에 블럭을 먼저 넣어주세요.';return;}
+  if(!S.example)countHand();save();renderLib();
+  var t0=performance.now(),g0=gen;$('status').textContent='계산 중…';
+  run('solve',payload(hand),function(res){if(g0!==gen)return;$('status').textContent='계산 '+Math.round(performance.now()-t0)+'ms';
+    var fix=function(ms){ms.forEach(function(m){if(m.t==='p')m.slot=hand[m.i].slot;});};
+    fix(res.moves);(res.alts||[]).forEach(function(a){fix(a.moves);});
+    plan={moves:res.moves,ok:res.ok,score:res.score,alts:res.alts||[],placed:res.placed,need:hand.length};preview=0;simulatePlan();renderAll();});}
+$('b-solve').onclick=solve;
+$('b-reroll').onclick=function(){var hand=activeHand();if(!hand.length){$('status').textContent='손패에 블럭을 먼저 넣어주세요.';return;}
+  var g1=gen;$('status').textContent='바꿔뽑기 분석 중… 0%';
+  run('reroll',payload(hand),function(res){if(g1!==gen)return;$('status').textContent='';rerollRes=res;renderReroll();},function(x){$('status').textContent='바꿔뽑기 분석 중… '+Math.round(x*100)+'%';});};
+
+function stepColor(i,m){return m.t==='e'?'var(--serase)':['var(--s1)','var(--s2)','var(--s3)','var(--s4)'][Math.min(3,i)];}
+function renderPlan(){var pp=$('planPanel');if(!plan){pp.hidden=true;return;}pp.hidden=false;
+  $('planScore').textContent='평가 점수 '+plan.score.toFixed(1);
+  var msg='';
+  if(!plan.ok)msg='<div class="banner">'+plan.need+'개를 모두 놓는 방법이 없습니다. 최대 '+plan.placed+'개까지 놓는 순서를 보여줍니다.'+
+     (S.reroll>0?' 바꿔뽑기 분석을 눌러 어떤 블럭을 바꿀지 확인하세요.':'')+(S.erase>0&&!S.useErase?' 설정에서 점찍기 사용 고려를 켜면 다시 계산해 볼 수 있습니다.':'')+'</div>';
+  $('planMsg').innerHTML=msg;
+  var h='';plan.frames.forEach(function(fr,i){var m=fr.m,col=stepColor(i,m);
+    if(m.t==='e')h+='<div class="step'+(i===preview?' sel':'')+'" data-st="'+i+'"><span class="chip" style="background:'+col+'">'+(i+1)+'</span><div class="txt"><b>점찍기</b> · '+(m.r+1)+'행 '+(m.c+1)+'열에 한 칸 놓기'+(fr.rows.length?'<span class="tag">'+fr.rows.length+'줄 제거</span>':'')+'</div></div>';
+    else{var slot=S.hand[m.slot],p=libById(slot.pid),turn=slot.cur?pressText(pressesFor(slot.cur,fr.o.cells)):'';
+      h+='<div class="step'+(i===preview?' sel':'')+'" data-st="'+i+'"><span class="chip" style="background:'+col+'">'+(i+1)+'</span>'+miniShape(fr.o.cells,9,col)+
+       '<div class="txt"><b>'+esc(p.name)+'</b> <span class="muted small">(슬롯 '+(m.slot+1)+')</span>'+(turn?' · <span class="turn">'+turn+'</span>':'')+
+       '<br><span class="small">왼쪽 위 기준 '+(m.r+1)+'행 '+(m.c+1)+'열</span>'+
+       (fr.rows.length?'<span class="tag">'+fr.rows.length+'줄 제거</span>':'')+(fr.gainE?'<span class="tag warn">⊙ 점찍기 +'+fr.gainE+'</span>':'')+(fr.gainR?'<span class="tag warn">⇄ 바꿔뽑기 +'+fr.gainR+'</span>':'')+'</div></div>';}});
+  if(plan.alts&&plan.alts.length>1)h+='<div class="small muted">다른 후보: '+plan.alts.slice(1).map(function(a,k){return '<button data-alt="'+(k+1)+'">후보 '+(k+2)+' ('+a.score.toFixed(1)+')</button>';}).join(' ')+'</div>';
+  var el=$('steps');el.innerHTML=h;
+  el.querySelectorAll('[data-st]').forEach(function(d){d.onclick=function(){preview=+d.dataset.st;renderBoard();renderPlan();};});
+  el.querySelectorAll('[data-alt]').forEach(function(b){b.onclick=function(){var a=plan.alts[+b.dataset.alt];plan.alts.splice(+b.dataset.alt,1);plan.alts.unshift({score:plan.score,moves:plan.moves});
+    plan.moves=a.moves;plan.score=a.score;preview=0;simulatePlan();renderAll();};});
+  $('b-apply1').disabled=!plan.moves.length;$('b-applyAll').disabled=!plan.moves.length;}
+function grant(kind,n){var room=Math.max(0,7-S.erase-S.reroll),g=Math.min(n,room);S[kind]+=g;return n-g;}
+var gainLog=[];
+function applyCounters(fr){if(fr.m.t==='e')S.erase=Math.max(0,S.erase-1);
+  else{S.placements++;S.toNext--;if(S.toNext<=0){S.spawnNote=true;S.toNext=7;}}S.totalLines+=fr.res.lines;
+  if(fr.gainE){var le=grant('erase',fr.gainE);gainLog.push('점찍기 +'+(fr.gainE-le)+(le?' (한도 초과로 '+le+'개 버려짐)':''));}
+  if(fr.gainR){var lr=grant('reroll',fr.gainR);gainLog.push('바꿔뽑기 +'+(fr.gainR-lr)+(lr?' (한도 초과로 '+lr+'개 버려짐)':''));}}
+function flushGain(){if(gainLog.length){$('status').textContent='능력 획득: '+gainLog.join(', ');gainLog=[];}}
+function applyOne(){if(!plan||!plan.moves.length)return;var fr=plan.frames[0],m=fr.m;applyCounters(fr);
+  S.board=fr.after.slice();S.abil=fr.afterAb.slice();S.abilR=fr.afterAbR.slice();if(m.t==='p')S.hand[m.slot].used=true;
+  plan.moves.shift();plan.alts=[];
+  if(S.hand.every(function(s){return s.used||!s.pid;})&&S.hand.some(function(s){return s.used;})){
+    S.hand=blankHand();S.target=0;plan=null;$('status').textContent='3개를 모두 놓았습니다. 다음 손패를 넣거나 스크린샷을 붙여넣으세요.';}
+  else if(!plan.moves.length)plan=null;else simulatePlan();
+  preview=0;rerollRes=null;}
+function applyAll(){var g=8;while(plan&&plan.moves.length&&g--)applyOne();}
+$('b-apply1').onclick=function(){snap();S.example=false;applyOne();renderAll();flushGain();save();};
+$('b-applyAll').onclick=function(){snap();S.example=false;applyAll();renderAll();flushGain();save();};
+
+function renderReroll(){var p=$('rerollPanel');if(!rerollRes){p.hidden=true;return;}p.hidden=false;var r=rerollRes;
+  var best=null;r.out.forEach(function(o){if(!best||o.ev>best.ev)best=o;});
+  var gain=best?best.ev-r.base:0;
+  var h='<p class="small" style="margin:0">지금 손패 그대로의 평가: <b class="num">'+r.base.toFixed(1)+'</b>'+(r.baseOk?'':' (전부 놓을 수 없음)')+'. 각 슬롯을 바꿔뽑았을 때 학습된 확률로 가중한 기대 평가입니다.</p>';
+  h+='<div class="tblwrap"><table><thead><tr><th>바꿀 슬롯</th><th>블럭</th><th class="num">기대 평가</th><th class="num">차이</th></tr></thead><tbody>';
+  r.out.forEach(function(o){var p2=libById(S.hand[o.slot].pid),d=o.ev-r.base;
+    h+='<tr><td>슬롯 '+(o.slot+1)+'</td><td>'+(p2?esc(p2.name):'?')+'</td><td class="num">'+o.ev.toFixed(1)+'</td><td class="num" style="color:'+(d>0?'var(--accent)':'var(--muted)')+'">'+(d>0?'+':'')+d.toFixed(1)+'</td></tr>';});
+  h+='</tbody></table></div>';
+  h+=gain>5?'<div class="banner ok">추천: 슬롯 '+(best.slot+1)+' 바꿔뽑기 (기대 +'+gain.toFixed(1)+')'+(S.reroll>0?'':' · 보유한 바꿔뽑기가 없습니다')+'</div>':'<div class="banner">바꿔뽑기를 아껴두는 편이 낫습니다. 기대 이득이 작습니다.</div>';
+  $('rerollOut').innerHTML=h;}
+
+/* ===== 스크린샷 인식 ===== */
+function prepImage(img){var w=img.width,h=img.height,d=img.data,N=w*h,lum=new Uint8Array(N),cls=new Uint8Array(N);
+  for(var i=0,j=0;i<N;i++,j+=4){var r=d[j],g=d[j+1],b=d[j+2],mx=r>g?(r>b?r:b):(g>b?g:b),mn=r<g?(r<b?r:b):(g<b?g:b),df=mx-mn;
+    lum[i]=(r*77+g*150+b*29)>>8;
+    var s=mx?df/mx:0,v=mx/255,hue=0;
+    if(df){if(mx===r)hue=60*(((g-b)/df+6)%6);else if(mx===g)hue=60*((b-r)/df+2);else hue=60*((r-g)/df+4);}
+    var c=0;if(s>=0.28&&v>=0.45&&hue>=160&&hue<=222)c|=1;if(s<0.12&&v>0.86)c|=2;if(s>0.25&&v>0.35)c|=4;cls[i]=c;}
+  return {w:w,h:h,data:d,lum:lum,cls:cls};}
+function fitAxis(score,n,len){
+  var s2=new Float32Array(len);for(var i=0;i<len;i++){var a=score[i],b=i?score[i-1]:0,c=i<len-1?score[i+1]:0;s2[i]=Math.max(a,b,c);}
+  var at=function(x){var k=Math.round(x);return k>=0&&k<len?s2[k]:0;};
+  var tot=function(x0,p){var v=0;for(var k=0;k<=n;k++)v+=at(x0+k*p);return v;};
+  var best={v:-1,p:0,x0:0},pmax=(len-2)/n;
+  for(var p=6;p<=pmax;p+=0.25)for(var x0=0;x0+n*p<len-1;x0++){var v=tot(x0,p);if(v>best.v)best={v:v,p:p,x0:x0};}
+  if(best.v<=0)return {p:0,x0:0,lineMean:0,midMean:0};
+  var b2=best;
+  for(var p2=best.p-0.3;p2<=best.p+0.3;p2+=0.02)for(var x1=best.x0-1.5;x1<=best.x0+1.5;x1+=0.25){if(x1<0||x1+n*p2>=len-1)continue;var v2=tot(x1,p2);if(v2>b2.v)b2={v:v2,p:p2,x0:x1};}
+  var lm=0,mm=0,k;for(k=0;k<=n;k++)lm+=at(b2.x0+k*b2.p);for(k=0;k<n;k++)mm+=at(b2.x0+(k+0.5)*b2.p);
+  return {p:b2.p,x0:b2.x0,lineMean:lm/(n+1),midMean:mm/n};}
+function detectBoard(P,W,H){var w=P.w,h=P.h,lum=P.lum,cls=P.cls,col=new Float32Array(w),row=new Float32Array(h),DL=6;
+  for(var y=3;y<h-3;y++){var o=y*w;for(var x=3;x<w-3;x++){var i=o+x;if(!(cls[i]&1))continue;var L=lum[i]+DL;
+    if(((cls[i-2]&cls[i+2]&1)&&L<=lum[i-2]&&L<=lum[i+2])||((cls[i-3]&cls[i+3]&1)&&L<=lum[i-3]&&L<=lum[i+3]))col[x]++;
+    var a=i-2*w,b=i+2*w,a3=i-3*w,b3=i+3*w;
+    if(((cls[a]&cls[b]&1)&&L<=lum[a]&&L<=lum[b])||((cls[a3]&cls[b3]&1)&&L<=lum[a3]&&L<=lum[b3]))row[y]++;}}
+  var fx=fitAxis(col,W,w),fy=fitAxis(row,H,h);
+  var rect={x0:fx.x0,y0:fy.x0,p:fx.p,q:fy.p};
+  var vis=fx.p&&fy.p?Math.min(fx.lineMean/(H*fy.p),fy.lineMean/(W*fx.p)):0;
+  var conf=vis>=0.15&&fx.lineMean>2.5*fx.midMean+2&&fy.lineMean>2.5*fy.midMean+2&&Math.abs(fx.p-fy.p)<0.2*Math.max(fx.p,fy.p);
+  return {rect:rect,conf:conf,vis:vis};}
+function median(a){a=a.slice().sort(function(x,y){return x-y;});return a[a.length>>1];}
+function classifyCells(P,R,W,H){var out=[],w=P.w,h=P.h,d=P.data,cls=P.cls,lum=P.lum;
+  for(var r=0;r<H;r++)for(var c=0;c<W;c++){
+    var xa=Math.max(0,Math.ceil(R.x0+(c+0.14)*R.p)),xb=Math.min(w-1,Math.floor(R.x0+(c+0.86)*R.p)),ya=Math.max(0,Math.ceil(R.y0+(r+0.14)*R.q)),yb=Math.min(h-1,Math.floor(R.y0+(r+0.86)*R.q));
+    var n=0,t=0,wh=0,ed=0,sr=0,sg=0,sb=0,sl=0,sl2=0,pur=0,nav=0;
+    for(var y=ya;y<=yb;y++)for(var x=xa;x<=xb;x++){var i=y*w+x,k=i*4,R0=d[k],G0=d[k+1],B0=d[k+2],L=lum[i];n++;
+      if(cls[i]&1)t++;if(cls[i]&2)wh++;sr+=R0;sg+=G0;sb+=B0;sl+=L;sl2+=L*L;
+      if(x<xb&&Math.abs(L-lum[i+1])>6)ed++;
+      var mx=Math.max(R0,G0,B0),mn=Math.min(R0,G0,B0),df=mx-mn;
+      if(df>0.3*mx&&mx>90){var hue=mx===R0?60*(((G0-B0)/df+6)%6):mx===G0?60*((B0-R0)/df+2):60*((R0-G0)/df+4);
+        if(hue>=255&&hue<=335)pur++;else if(hue>=195&&hue<=240&&mx<180&&df>0.45*mx)nav++;}}
+    var mL=n?sl/n:0;
+    out.push({r:r,c:c,teal:n?t/n:0,white:n?wh/n:0,edge:n?ed/n:0,std:n?Math.sqrt(Math.max(0,sl2/n-mL*mL)):0,m:n?[sr/n,sg/n,sb/n]:[0,0,0],pur:pur,nav:nav});}
+  /* 행마다 '빈칸 색' 기준: 평평한 청록 칸의 중앙값 (배경이 위아래로 그라데이션이라 행별로 잡음) */
+  var ref=[],known=[],r2;
+  for(r2=0;r2<H;r2++){var arr=out.filter(function(o){return o.r===r2&&o.teal>=0.9&&o.std<5;});
+    ref[r2]=arr.length?[0,1,2].map(function(ch){return median(arr.map(function(o){return o.m[ch];}));}):null;if(ref[r2])known.push(r2);}
+  for(r2=0;r2<H;r2++)if(!ref[r2]&&known.length){var nr=known[0];known.forEach(function(k){if(Math.abs(k-r2)<Math.abs(nr-r2))nr=k;});ref[r2]=ref[nr];}
+  out.forEach(function(o){var rf=ref[o.r],dist=rf?Math.hypot(o.m[0]-rf[0],o.m[1]-rf[1],o.m[2]-rf[2]):0;
+    /* 능력 아이콘: 흰 테두리 빛 + 촘촘한 경계. 블럭은 광택(밝기 편차)이 크고, 빈칸은 평평함 */
+    o.icon=o.white>=0.08&&o.edge>=0.25;
+    if(o.icon){o.state=o.teal>=0.4?'empty':'filled';o.ab=(o.pur>o.nav&&o.pur>=6)?'r':'e';}
+    else if(o.std>=9&&(o.teal<0.75||dist>20))o.state='filled';
+    else if(o.teal>=0.75)o.state=dist>45?'filled':'empty';
+    else o.state=o.teal<0.35?'filled':'empty';});
+  return out;}
+function detectHand(P,R,W,H){var w=P.w,h=P.h,cls=P.cls,cp=R.p,st=Math.max(1,Math.round(cp/9)),gw=Math.floor(w/st),gh=Math.floor(h/st),lab=new Uint8Array(gw*gh),comps=[],stack=[];
+  for(var gy=0;gy<gh;gy++)for(var gx=0;gx<gw;gx++){var gi=gy*gw+gx;if(lab[gi]||!(cls[gy*st*w+gx*st]&2))continue;
+    var c={x0:gx,y0:gy,x1:gx,y1:gy,n:0};lab[gi]=1;stack.push(gi);
+    while(stack.length){var q=stack.pop(),qx=q%gw,qy=(q-qx)/gw;c.n++;if(qx<c.x0)c.x0=qx;if(qx>c.x1)c.x1=qx;if(qy<c.y0)c.y0=qy;if(qy>c.y1)c.y1=qy;
+      var nb=[qx>0?q-1:-1,qx<gw-1?q+1:-1,qy>0?q-gw:-1,qy<gh-1?q+gw:-1];
+      for(var k=0;k<4;k++){var u=nb[k];if(u<0||lab[u])continue;var ux=u%gw,uy=(u-ux)/gw;if(cls[uy*st*w+ux*st]&2){lab[u]=1;stack.push(u);}}}
+    comps.push(c);}
+  var bx0=R.x0,by0=R.y0,bx1=R.x0+W*R.p,by1=R.y0+H*R.q,cards=[];
+  comps.forEach(function(c){var x0=c.x0*st,y0=c.y0*st,x1=(c.x1+1)*st,y1=(c.y1+1)*st,bw=x1-x0,bh=y1-y0;
+    if(bw<2.5*cp||bh<1.5*cp||bw>12*cp||bh>8*cp)return;
+    if(c.n*st*st/(bw*bh)<0.55)return;
+    var ix=Math.max(0,Math.min(x1,bx1)-Math.max(x0,bx0)),iy=Math.max(0,Math.min(y1,by1)-Math.max(y0,by0));if(ix*iy>0.2*bw*bh)return;
+    cards.push({x0:x0,y0:y0,x1:x1,y1:y1,bw:bw,bh:bh});});
+  var isPc=function(x,y){var v=cls[y*w+x];return (v&4)&&!(v&2);};
+  cards.forEach(function(cd){var xa=Math.round(cd.x0+0.06*cd.bw),xb=Math.round(cd.x0+0.45*cd.bw),ya=Math.round(cd.y0+0.1*cd.bh),yb=Math.round(cd.y1-0.1*cd.bh);
+    var colN=new Int32Array(xb-xa+1),rowN=new Int32Array(yb-ya+1),n=0;
+    for(var y=ya;y<=yb;y++)for(var x=xa;x<=xb;x++)if(isPc(x,y)){n++;colN[x-xa]++;rowN[y-ya]++;}
+    if(n<Math.pow(0.2*cp,2))return;
+    var trim=function(arr){var mx=0,i;for(i=0;i<arr.length;i++)mx=Math.max(mx,arr[i]);var lo=0,hi=arr.length-1;
+      while(lo<hi&&arr[lo]<0.2*mx)lo++;while(hi>lo&&arr[hi]<0.2*mx)hi--;return [lo,hi];};
+    var tx=trim(colN),ty=trim(rowN);
+    cd.pb={x0:xa+tx[0],y0:ya+ty[0],bw:tx[1]-tx[0]+1,bh:ty[1]-ty[0]+1};});
+  var withP=cards.filter(function(c){return c.pb;});if(!withP.length)return {cards:[],m:0};
+  var mw=median(withP.map(function(c){return c.bw;})),mh=median(withP.map(function(c){return c.bh;}));
+  cards=cards.filter(function(c){return Math.abs(c.bw-mw)<0.25*mw&&Math.abs(c.bh-mh)<0.25*mh;});
+  cards.sort(function(a,b){return Math.abs(a.y0-b.y0)>0.5*mh?a.y0-b.y0:a.x0-b.x0;});
+  cards=cards.slice(0,3);
+  var pcs=cards.filter(function(c){return c.pb;}),prior=0.32*cp;
+  var occ=function(cd,nx,ny){var pb=cd.pb,cw=pb.bw/nx,ch=pb.bh/ny,res=[];
+    for(var j=0;j<ny;j++)for(var i=0;i<nx;i++){var xa=Math.round(pb.x0+(i+0.2)*cw),xb=Math.round(pb.x0+(i+0.8)*cw),ya=Math.round(pb.y0+(j+0.2)*ch),yb=Math.round(pb.y0+(j+0.8)*ch),n=0,t=0;
+      for(var y=ya;y<=yb;y++)for(var x=xa;x<=xb;x++){n++;if(isPc(x,y))t++;}res.push(n?t/n:0);}return res;};
+  var dims=function(cd,m){return [Math.max(1,Math.min(7,Math.round(cd.pb.bw/m))),Math.max(1,Math.min(7,Math.round(cd.pb.bh/m)))];};
+  var evalM=function(m){var tot=0;pcs.forEach(function(cd){var dm=dims(cd,m),err=Math.abs(cd.pb.bw-dm[0]*m)/m+Math.abs(cd.pb.bh-dm[1]*m)/m,cl=0;
+      occ(cd,dm[0],dm[1]).forEach(function(v){cl+=Math.min(v,1-v);});tot+=err+1.5*cl;});return tot+0.8*Math.abs(Math.log(m/prior));};
+  var cands=[prior];pcs.forEach(function(cd){for(var n=1;n<=7;n++){cands.push(cd.pb.bw/n);cands.push(cd.pb.bh/n);}});
+  var bm=prior,bv=1e9;cands.forEach(function(m){if(m<3)return;var v=evalM(m);if(v<bv){bv=v;bm=m;}});
+  pcs.forEach(function(cd){var dm=dims(cd,bm),o=occ(cd,dm[0],dm[1]),cells=[];
+    for(var j=0;j<dm[1];j++)for(var i=0;i<dm[0];i++)if(o[j*dm[0]+i]>=0.5)cells.push([j,i]);
+    cd.cells=cells.length?normCells(cells):null;cd.nx=dm[0];cd.ny=dm[1];});
+  return {cards:cards,m:bm};}
+function loadBitmap(file){if(window.createImageBitmap)return createImageBitmap(file);
+  return new Promise(function(res,rej){var u=URL.createObjectURL(file),im=new Image();im.onload=function(){res(im);};im.onerror=rej;im.src=u;});}
+function handleImage(file){
+  loadBitmap(file).then(function(bmp){
+    var iw=bmp.naturalWidth||bmp.width,ih=bmp.naturalHeight||bmp.height,sc=Math.min(1,2400/Math.max(iw,ih));
+    var cw=Math.max(1,Math.round(iw*sc)),ch=Math.max(1,Math.round(ih*sc)),cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
+    var cx=cv.getContext('2d',{willReadFrequently:true});cx.drawImage(bmp,0,0,cw,ch);
+    var P=prepImage(cx.getImageData(0,0,cw,ch)),det=detectBoard(P,S.W,S.H),rect=det.rect,usedCal=false;
+    if(!det.conf&&S.cal&&S.cal.iw===cw&&S.cal.ih===ch){rect={x0:S.cal.x0,y0:S.cal.y0,p:S.cal.p,q:S.cal.q};usedCal=true;}
+    shot={cv:cv,P:P,w:cw,h:ch,rect:rect,ok:det.conf||usedCal,usedCal:usedCal,picking:null,info:null};
+    $('shotResult').hidden=false;
+    if(!shot.ok){shot.info={err:true};renderShot();return;}
+    applyShot();
+  }).catch(function(){$('shotResult').hidden=false;shot=null;$('shotMsg').innerHTML='<div class="banner">이미지를 읽지 못했습니다. PNG나 JPG 캡처를 붙여넣어 주세요.</div>';});}
+function matchOrAdd(cells,added){var key=canon(cells),f=S.lib.filter(function(l){return canon(l.cells)===key;})[0];if(f)return f.id;
+  var np={id:'c'+Date.now()+'_'+added.length,name:'새 '+cells.length+'칸',cells:normCells(cells),builtin:false,count:0};S.lib.push(np);added.push(np);return np.id;}
+function applyShot(){
+  var cells=classifyCells(shot.P,shot.rect,S.W,S.H),hand=detectHand(shot.P,shot.rect,S.W,S.H);shot.cells=cells;shot.hand=hand;
+  snap();
+  var nb=[],i;for(i=0;i<S.H;i++)nb.push(0);var filled=0,icE=0,icR=0;
+  cells.forEach(function(o){if(o.state==='filled'){nb[o.r]|=1<<o.c;filled++;}if(o.icon){if(o.ab==='r')icR++;else icE++;}});
+  var followed=0;
+  if(plan&&plan.frames&&plan.frames.length){plan.frames.forEach(function(fr,k){if(fr.after.join(',')===nb.join(','))followed=k+1;});
+    for(i=0;i<followed;i++){applyCounters(plan.frames[i]);if(plan.frames[i].m.t==='p')S.hand[plan.frames[i].m.slot].used=true;}}
+  S.board=nb;cells.forEach(function(o){var bit=1<<o.c;
+    if(o.icon){S.abil[o.r]|=bit;if(o.ab==='r')S.abilR[o.r]|=bit;else S.abilR[o.r]&=~bit;}
+    else if(o.state==='empty'&&o.teal>=0.95&&o.std<5){S.abil[o.r]&=~bit;S.abilR[o.r]&=~bit;}});
+  if(icE+icR)S.spawnNote=false;
+  var added=[],names=[],inferred=0;
+  if(hand.cards.length){var nh=[];
+    for(i=0;i<3;i++){var cd=hand.cards[i];
+      if(!cd||!cd.cells){nh.push({pid:null,counted:false,used:true,cur:null});continue;}
+      var pid=matchOrAdd(cd.cells,added),old=S.hand[i],same=old&&old.pid===pid&&!old.used;
+      nh.push({pid:pid,counted:same?old.counted:false,used:false,cur:cd.cells});names.push(libById(pid).name);}
+    if(!followed){var act=[0,1,2].filter(function(j){return S.hand[j].pid&&!S.hand[j].used;});
+      var emptied=act.filter(function(j){return !nh[j].pid;}),changed=act.filter(function(j){return nh[j].pid&&nh[j].pid!==S.hand[j].pid;});
+      var placedN=(act.length&&!emptied.length&&changed.length===act.length)?act.length:emptied.length;
+      for(var q=0;q<placedN;q++){S.placements++;S.toNext--;if(S.toNext<=0){S.spawnNote=true;S.toNext=7;}}
+      inferred=placedN;}
+    if(nh.every(function(s){return !s.pid;}))nh=blankHand();
+    S.hand=nh;var nx=S.hand.findIndex(function(s){return !s.pid&&!s.used;});S.target=nx>=0?nx:0;}
+  S.example=false;S.cal={iw:shot.w,ih:shot.h,x0:shot.rect.x0,y0:shot.rect.y0,p:shot.rect.p,q:shot.rect.q};
+  shot.info={filled:filled,icE:icE,icR:icR,names:names,added:added,followed:followed,inferred:inferred,cards:hand.cards.length};
+  invalidate();save();renderAll();renderShot();
+  if(activeHand().length)solve();}
+function renderShot(){if(!shot)return;var inf=shot.info||{},msg='';
+  if(inf.err)msg='<div class="banner">게임판 격자를 찾지 못했습니다. <b>판 위치 직접 지정</b>을 누르고 판의 왼쪽 위 모서리와 오른쪽 아래 모서리를 차례로 클릭하세요.</div>';
+  else{msg='<div class="banner ok"><span>판 '+S.W+'×'+S.H+' 인식 · 채운 칸 <b class="num">'+inf.filled+'</b>개'+
+      (inf.names&&inf.names.length?' · 손패 <b>'+inf.names.map(esc).join(', ')+'</b>':(inf.cards?'':' · 손패는 찾지 못해 그대로 두었습니다'))+
+      (shot.usedCal?' · 저장된 판 위치 사용':'')+'</span></div>';
+    if(inf.inferred)msg+='<div class="small muted">손패 변화로 보아 블럭 '+inf.inferred+'개를 놓은 것으로 보고 \'다음 능력 획득까지\'를 줄였습니다. 게임 숫자와 다르면 −/+로 맞춰주세요.</div>';
+    if(inf.followed)msg+='<div class="small muted">추천 '+inf.followed+'단계까지 그대로 놓은 것으로 확인되어 배치 횟수와 능력 카운트를 반영했습니다.</div>';
+    if(inf.added&&inf.added.length)msg+='<div class="small">처음 보는 블럭을 라이브러리에 추가했습니다: '+inf.added.map(function(p){return esc(p.name);}).join(', ')+'. 아래 라이브러리에서 이름을 확인하세요.</div>';
+    if(inf.icE||inf.icR)msg+='<div class="small">능력칸을 찾았습니다: '+(inf.icE?'⊙ 점찍기 '+inf.icE+'개 ':'')+(inf.icR?'⇄ 바꿔뽑기 '+inf.icR+'개':'')+'. 종류가 틀리면 능력칸 모드에서 그 칸을 눌러 바꾸세요.</div>';
+    msg+='<div class="small muted">빨간 격자와 점이 실제 판과 어긋나면 판 위치 직접 지정을 누르세요. 잘못 읽었으면 되돌리기로 이전 판으로 돌아갑니다.</div>';}
+  if(shot.picking)msg='<div class="banner">'+(shot.picking.length?'이제 판의 <b>오른쪽 아래</b> 모서리를 클릭하세요.':'이미지에서 판 격자의 <b>왼쪽 위</b> 모서리를 클릭하세요.')+'</div>';
+  $('shotMsg').innerHTML=msg;drawShot();}
+function drawShot(){if(!shot)return;var cv=$('shotCanvas'),avail=Math.max(200,$('shotPanel').clientWidth-30),sc=Math.min(1.5,avail/shot.w);
+  cv.width=Math.round(shot.w*sc);cv.height=Math.round(shot.h*sc);cv.classList.toggle('picking',!!shot.picking);
+  var cx=cv.getContext('2d');cx.drawImage(shot.cv,0,0,cv.width,cv.height);
+  if(shot.ok&&!shot.picking){var R=shot.rect,k;cx.strokeStyle='rgba(255,40,60,.9)';cx.lineWidth=1;cx.beginPath();
+    for(k=0;k<=S.W;k++){var x=(R.x0+k*R.p)*sc;cx.moveTo(x,R.y0*sc);cx.lineTo(x,(R.y0+S.H*R.q)*sc);}
+    for(k=0;k<=S.H;k++){var y=(R.y0+k*R.q)*sc;cx.moveTo(R.x0*sc,y);cx.lineTo((R.x0+S.W*R.p)*sc,y);}cx.stroke();
+    (shot.cells||[]).forEach(function(o){var x=(R.x0+(o.c+0.5)*R.p)*sc,y=(R.y0+(o.r+0.5)*R.q)*sc;
+      if(o.icon){cx.beginPath();cx.arc(x,y,Math.max(4,R.p*sc*0.42),0,7);cx.lineWidth=2.5;cx.strokeStyle=o.ab==='r'?'rgba(170,60,230,.95)':'rgba(255,200,0,.95)';cx.stroke();}
+      if(o.state==='filled'){cx.beginPath();cx.arc(x,y,Math.max(2,R.p*sc*0.16),0,7);cx.fillStyle='rgba(20,20,30,.85)';cx.fill();}});
+    ((shot.hand&&shot.hand.cards)||[]).forEach(function(cd,i){cx.strokeStyle='rgba(255,140,0,.95)';cx.lineWidth=2;
+      if(cd.pb)cx.strokeRect((cd.pb.x0-2)*sc,(cd.pb.y0-2)*sc,(cd.pb.bw+4)*sc,(cd.pb.bh+4)*sc);
+      cx.fillStyle='rgba(255,140,0,.95)';cx.font='bold '+Math.max(11,Math.round(14*sc))+'px sans-serif';cx.fillText(String(i+1),(cd.x0+4)*sc,(cd.y0+16)*sc);});}
+  if(shot.picking)shot.picking.forEach(function(p){cx.beginPath();cx.arc(p[0]*sc,p[1]*sc,5,0,7);cx.fillStyle='rgba(255,40,60,.95)';cx.fill();});}
+$('shotCanvas').addEventListener('click',function(e){if(!shot||!shot.picking)return;var b=this.getBoundingClientRect();
+  var x=(e.clientX-b.left)/b.width*shot.w,y=(e.clientY-b.top)/b.height*shot.h;shot.picking.push([x,y]);
+  if(shot.picking.length===2){var a=shot.picking[0],c=shot.picking[1];shot.picking=null;
+    if(c[0]-a[0]<S.W*3||c[1]-a[1]<S.H*3){shot.info={err:true};renderShot();return;}
+    shot.rect={x0:a[0],y0:a[1],p:(c[0]-a[0])/S.W,q:(c[1]-a[1])/S.H};shot.ok=true;shot.usedCal=false;applyShot();return;}
+  renderShot();});
+$('b-manual').onclick=function(){if(!shot)return;shot.picking=[];renderShot();};
+$('b-shotHide').onclick=function(){$('shotResult').hidden=true;};
+$('shotFile').onchange=function(){if(this.files&&this.files[0])handleImage(this.files[0]);this.value='';};
+document.addEventListener('paste',function(e){var items=(e.clipboardData&&e.clipboardData.items)||[];
+  for(var i=0;i<items.length;i++)if(items[i].type&&items[i].type.indexOf('image/')===0){var f=items[i].getAsFile();if(f){e.preventDefault();handleImage(f);return;}}});
+document.addEventListener('dragover',function(e){if(e.dataTransfer&&Array.prototype.indexOf.call(e.dataTransfer.types||[],'Files')>=0){e.preventDefault();$('drop').classList.add('over');}});
+document.addEventListener('dragleave',function(e){if(!e.relatedTarget)$('drop').classList.remove('over');});
+document.addEventListener('drop',function(e){var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];$('drop').classList.remove('over');
+  if(f&&f.type.indexOf('image/')===0){e.preventDefault();handleImage(f);}});
+window.addEventListener('resize',function(){if(shot&&!$('shotResult').hidden)drawShot();});
+
+function renderAll(){renderBoard();renderAbil();renderHand();renderLib();renderPlan();renderReroll();}
+renderSettings();renderEditor();renderAll();save();
+</script>
+</body></html>
