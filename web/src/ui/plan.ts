@@ -37,7 +37,7 @@ export function renderPlan(): void {
       (app.game.dots > 0 ? ' 점 찍기로 자리를 만들 수도 있습니다.' : '') +
       (app.game.dots + app.game.rerolls === 0 ? ' 능력이 없으면 게임이 끝납니다.' : '') + '</div>';
   }
-  if (plan.complete && app.game.rerolls > 0 && app.game.dots + app.game.rerolls < 7 && !app.rerollReport) {
+  if (plan.complete && app.game.rerolls > 0 && app.game.dots + app.game.rerolls < 7 && !app.rerollReport && store.state.settings.rerollMode !== 'always') {
     m += `<div class="banner soft">⇄ 바꿔 뽑기 ${app.game.rerolls}개 보유 · 지금은 아껴 두는 상황입니다 (손패를 다 놓을 수 있고 보유도 가득 차지 않음). 손패를 못 놓거나 보유가 7개가 되면 자동으로 분석해 추천합니다. 궁금하면 「바꿔 뽑기 분석」.</div>`;
   }
   msg.innerHTML = m;
@@ -105,6 +105,9 @@ function renderReroll(): void {
   let best: (typeof rep.options)[number] | null = null;
   for (const o of rep.options) if (!best || o.ev > best.ev) best = o;
   const gain = best ? best.ev - rep.base : 0;
+  const must = !rep.base_complete || g.dots + g.rerolls >= 7;
+  // 정책 조건(못 놓음·보유 가득)에서는 기대값이 조금만 높아도 추천, 그 외(매번 모드)에는 기준값 이상일 때만.
+  const margin = must ? 0 : store.state.settings.rerollMargin;
   let h = `<div class="reroll"><p class="small" style="margin:6px 0">지금 손패 그대로의 평가: <b class="num">${fmt(rep.base)}</b>${rep.base_complete ? '' : ' (전부 놓을 수 없음)'}. 각 슬롯을 바꿔 뽑았을 때 조각 등장 확률로 가중한 기대 평가입니다 (바꿔 뽑기 1개 소모 포함).</p>`;
   h += '<table><thead><tr><th>바꿀 슬롯</th><th>조각</th><th class="num">기대 평가</th><th class="num">차이</th><th>못 놓는 확률</th></tr></thead><tbody>';
   for (const o of rep.options) {
@@ -116,10 +119,10 @@ function renderReroll(): void {
   h += '</tbody></table>';
   if (best && !rep.base_complete) {
     h += `<div class="banner warn">지금 손패는 다 놓을 수 없습니다. 바꿔 뽑기를 쓰지 않으면 게임이 끝나므로 슬롯 ${best.slot + 1}을 바꾸세요 (가장 유리한 선택).${g.rerolls > 0 ? '' : ' 보유한 바꿔 뽑기가 없다면 점 찍기를 쓰세요.'}</div>`;
-  } else if (best && gain > 0) {
-    h += `<div class="banner ok">추천: 슬롯 ${best.slot + 1} 바꿔 뽑기 (기대 +${fmt(gain)})${g.rerolls > 0 ? '' : ' · 보유한 바꿔 뽑기가 없습니다'}${g.dots + g.rerolls >= 7 ? ' · 보유가 가득 차 새 아이콘이 생기지 않으니 쓰는 편이 이득입니다' : ''}</div>`;
+  } else if (best && gain > margin) {
+    h += `<div class="banner ok">추천: 슬롯 ${best.slot + 1} 바꿔 뽑기 (기대 +${fmt(gain)}${margin ? `, 기준 ${fmt(margin)}` : ''})${g.rerolls > 0 ? '' : ' · 보유한 바꿔 뽑기가 없습니다'}${g.dots + g.rerolls >= 7 ? ' · 보유가 가득 차 새 아이콘이 생기지 않으니 쓰는 편이 이득입니다' : ''}</div>`;
   } else {
-    h += '<div class="banner soft">바꿔 뽑기를 아껴두는 편이 낫습니다. 기대 이득이 없습니다.</div>';
+    h += `<div class="banner soft">바꿔 뽑기를 아껴두는 편이 낫습니다${best && gain > 0 ? ` (최선 슬롯 ${best.slot + 1}의 기대 이득 +${fmt(gain)}이 기준 ${fmt(margin)}에 못 미침)` : ' (기대 이득 없음)'}.</div>`;
   }
   h += '</div>';
   out.innerHTML = h;

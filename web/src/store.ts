@@ -28,6 +28,10 @@ export interface Settings {
   alpha: number;
   /** 손패 3개가 차면 자동으로 계산. */
   autoSolve: boolean;
+  /** 바꿔 뽑기 분석 시점: policy = 손패를 다 못 놓거나 보유 7개일 때만, always = 바꿔 뽑기가 있으면 매번. */
+  rerollMode: 'policy' | 'always';
+  /** 매번 모드에서 추천 기준: 기대 평가가 현재보다 이만큼(점) 높아야 추천. */
+  rerollMargin: number;
   /** 설정 스키마 버전 (기본값 변경 시 마이그레이션용). */
   version: number;
 }
@@ -81,6 +85,8 @@ export function defaultSettings(): Settings {
     counts: Array.from({ length: NUM_PIECES }, () => 0),
     alpha: 1,
     autoSolve: true,
+    rerollMode: 'policy',
+    rerollMargin: 300,
     version: SETTINGS_VERSION,
   };
 }

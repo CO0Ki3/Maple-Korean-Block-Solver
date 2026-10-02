@@ -91,6 +91,7 @@ fn play_config(a: &Args) -> PlayConfig {
         reroll_at_cap: !a.flag("no-reroll-at-cap"),
         reroll_beam: a.get("reroll-beam", 8usize),
         replan_on_spawn: !a.flag("no-replan-on-spawn"),
+        reroll_always: a.flag("reroll-always"),
     }
 }
 

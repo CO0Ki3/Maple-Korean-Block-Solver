@@ -26,11 +26,13 @@ pub struct PlayConfig {
     pub reroll_beam: usize,
     /// 아이콘이 생성된 직후(7의 배수 배치) 다시 계획할지. 새 아이콘 위치는 탐색이 모르는 정보다.
     pub replan_on_spawn: bool,
+    /// 바꿔 뽑기가 있으면 매 수 기대값을 검토할지 (false면 손패를 다 못 놓거나 보유가 가득 찼을 때만).
+    pub reroll_always: bool,
 }
 
 impl Default for PlayConfig {
     fn default() -> Self {
-        PlayConfig { max_hands: 0, replan_each_move: false, reroll_margin: 0.0, reroll_at_cap: true, reroll_beam: 8, replan_on_spawn: true }
+        PlayConfig { max_hands: 0, replan_each_move: false, reroll_margin: 0.0, reroll_at_cap: true, reroll_beam: 8, replan_on_spawn: true, reroll_always: false }
     }
 }
 
@@ -106,7 +108,7 @@ pub fn policy_step(st: &mut State, rng: &mut Rng, pw: &PieceWeights, w: &Weights
     ev.push(Event::Plan { complete: plan.complete, gain: plan.gain, value: plan.value, moves: plan.moves.len() });
 
     // 바꿔 뽑기: 손패를 다 못 놓거나, 보유가 가득 차 생성이 막혀 있을 때 검토.
-    let consider_reroll = st.rerolls > 0 && (!plan.complete || (cfg.reroll_at_cap && st.held() >= ABILITY_CAP));
+    let consider_reroll = st.rerolls > 0 && (!plan.complete || (cfg.reroll_at_cap && st.held() >= ABILITY_CAP) || cfg.reroll_always);
     if consider_reroll {
         let rep = reroll_analysis(st, pw, w, &reroll_params);
         if let Some(best) = rep.best() {

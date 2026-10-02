@@ -51,6 +51,8 @@ export function renderSettings(): void {
     <label>반전 버튼 축 <select id="set-flip"><option value="h"${s.flipAxis === 'h' ? ' selected' : ''}>좌우 뒤집기</option><option value="v"${s.flipAxis === 'v' ? ' selected' : ''}>상하 뒤집기</option></select></label>
     <label>라플라스 보정 α <input type="number" id="set-alpha" value="${s.alpha}" min="0" max="50" step="0.5" /></label>
     <label><input type="checkbox" id="set-auto"${s.autoSolve ? ' checked' : ''} /> 손패가 차면 자동 계산</label>
+    <label>바꿔 뽑기 분석 <select id="set-rmode"><option value="policy"${s.rerollMode === 'policy' ? ' selected' : ''}>못 놓거나 보유 7개일 때만</option><option value="always"${s.rerollMode === 'always' ? ' selected' : ''}>바꿔 뽑기가 있으면 매번</option></select></label>
+    <label>매번 모드 추천 기준 (점) <input type="number" id="set-rmargin" value="${s.rerollMargin}" min="0" max="5000" step="50" /></label>
   </div>
   <h3>평가 가중치 <span class="small muted">(${esc(s.weightsLabel)})</span></h3>
   <div class="row gap"><button id="w-default">기본값</button><button id="w-trained">학습된 가중치 불러오기</button><label class="link">JSON 파일<input id="w-file" type="file" accept="application/json" hidden /></label><button id="w-export">JSON 복사</button></div>
@@ -76,12 +78,14 @@ export function renderSettings(): void {
     s.params.sample_beam = clamp(+num('set-sbeam').value, 2, 64, 12);
     s.alpha = clamp(+num('set-alpha').value, 0, 50, 1);
     s.autoSolve = num('set-auto').checked;
+    s.rerollMode = (el.querySelector<HTMLSelectElement>('#set-rmode')!.value as 'policy' | 'always') || 'policy';
+    s.rerollMargin = clamp(+num('set-rmargin').value, 0, 5000, 300);
     store.save();
     app.invalidate();
     app.renderAll();
     app.scheduleSolve();
   };
-  for (const id of ['set-beam', 'set-maxdots', 'set-leafk', 'set-samples', 'set-stop', 'set-sbeam', 'set-alpha', 'set-auto']) num(id).onchange = onParams;
+  for (const id of ['set-beam', 'set-maxdots', 'set-leafk', 'set-samples', 'set-stop', 'set-sbeam', 'set-alpha', 'set-auto', 'set-rmode', 'set-rmargin']) num(id).onchange = onParams;
   num('set-workers').onchange = () => {
     s.workers = clamp(+num('set-workers').value, 1, 16, 4);
     store.save();
