@@ -164,6 +164,14 @@ class App {
       this.simulatePlan();
       const ms = Math.round(performance.now() - t0);
       this.status(`계산 ${ms}ms · 노드 ${plan.nodes.toLocaleString()} · 리프 ${plan.leaves}${samples > 0 ? ` · 샘플 ${samples}×후보` : ''}`, 'ok');
+      // 시뮬레이터 정책과 같은 조건에서 바꿔 뽑기 분석을 자동으로 돌린다:
+      // 손패를 다 놓을 수 없거나, 보유 능력이 가득 차(7개) 새 아이콘이 생기지 않을 때.
+      const g = this.game;
+      if (g.rerolls > 0 && (!plan.complete || g.dots + g.rerolls >= ABILITY_CAP)) {
+        this.renderAll();
+        void this.rerollAnalysis();
+        return;
+      }
     } catch (e) {
       if (String(e).includes('cancelled')) return;
       this.status(`계산 실패: ${String(e)}`, 'err');

@@ -37,6 +37,9 @@ export function renderPlan(): void {
       (app.game.dots > 0 ? ' 점 찍기로 자리를 만들 수도 있습니다.' : '') +
       (app.game.dots + app.game.rerolls === 0 ? ' 능력이 없으면 게임이 끝납니다.' : '') + '</div>';
   }
+  if (plan.complete && app.game.rerolls > 0 && app.game.dots + app.game.rerolls < 7 && !app.rerollReport) {
+    m += `<div class="banner soft">⇄ 바꿔 뽑기 ${app.game.rerolls}개 보유 · 지금은 아껴 두는 상황입니다 (손패를 다 놓을 수 있고 보유도 가득 차지 않음). 손패를 못 놓거나 보유가 7개가 되면 자동으로 분석해 추천합니다. 궁금하면 「바꿔 뽑기 분석」.</div>`;
+  }
   msg.innerHTML = m;
   let h = '';
   app.frames.forEach((fr, i) => {
