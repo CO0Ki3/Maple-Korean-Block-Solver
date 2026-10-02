@@ -36,7 +36,7 @@ export interface Settings {
   version: number;
 }
 
-export const SETTINGS_VERSION = 4;
+export const SETTINGS_VERSION = 5;
 
 export interface SlotMeta {
   /** 화면에 보이는 방향의 칸 목록 (회전·반전 안내용). null이면 기준 모양. */
@@ -76,7 +76,8 @@ export function blankGame(): GameState {
 export function defaultSettings(): Settings {
   return {
     // 자기대전 비교: 샘플링이 가장 큰 이득. 빔 64·샘플 4·상위 8이 24판 전부 캡 도달이었고, 여유를 두어 샘플 8을 기본으로 한다 (v2.1.0).
-    params: { beam: 64, max_dots: 2, leaf_k: 48, samples: 8, samples_top: 8, sample_beam: 12, alts: 3, line_bonus: 0 },
+    // 다중 제거 편향 k=1: 24판 비교에서 전 판 캡 도달을 유지하며 캡까지 손패 650 → 629 (v2.2.0).
+    params: { beam: 64, max_dots: 2, leaf_k: 48, samples: 8, samples_top: 8, sample_beam: 12, alts: 3, line_bonus: 1 },
     workers: Math.max(2, Math.min(8, (navigator.hardwareConcurrency || 4) - 1)),
     rotDir: 'cw',
     flipAxis: 'h',
@@ -150,6 +151,11 @@ class Store {
         // v4: 기본 샘플 수 4 → 8.
         s.settings.params.samples = Math.max(s.settings.params.samples ?? 0, 8);
         s.settings.version = 4;
+      }
+      if (s.settings.version < 5) {
+        // v5: 다중 제거 편향 k=1 기본.
+        if (!s.settings.params.line_bonus) s.settings.params.line_bonus = 1;
+        s.settings.version = 5;
       }
       if (!s.slots || s.slots.length !== 3) s.slots = [emptySlot(), emptySlot(), emptySlot()];
       s.game.icons = s.game.icons ?? [];
