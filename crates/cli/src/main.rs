@@ -78,6 +78,7 @@ fn search_params(a: &Args) -> SearchParams {
         samples: a.get("samples", 0usize),
         samples_top: a.get("samples-top", 0usize),
         sample_beam: a.get("sample-beam", 12usize),
+        line_bonus: a.get("line-bonus", 0.0f32),
         alts: 3,
         ..Default::default()
     }

@@ -76,7 +76,7 @@ export function blankGame(): GameState {
 export function defaultSettings(): Settings {
   return {
     // 자기대전 비교: 샘플링이 가장 큰 이득. 빔 64·샘플 4·상위 8이 24판 전부 캡 도달이었고, 여유를 두어 샘플 8을 기본으로 한다 (v2.1.0).
-    params: { beam: 64, max_dots: 2, leaf_k: 48, samples: 8, samples_top: 8, sample_beam: 12, alts: 3 },
+    params: { beam: 64, max_dots: 2, leaf_k: 48, samples: 8, samples_top: 8, sample_beam: 12, alts: 3, line_bonus: 0 },
     workers: Math.max(2, Math.min(8, (navigator.hardwareConcurrency || 4) - 1)),
     rotDir: 'cw',
     flipAxis: 'h',

@@ -24,6 +24,7 @@ fn parse_params(s: &str) -> Result<SearchParams, JsValue> {
         leaf_k: g("leaf_k").map(|x| x as usize).unwrap_or(d.leaf_k),
         samples: g("samples").map(|x| x as usize).unwrap_or(d.samples),
         samples_top: g("samples_top").map(|x| x as usize).unwrap_or(d.samples_top),
+        line_bonus: g("line_bonus").map(|x| x as f32).unwrap_or(d.line_bonus),
         sample_beam: g("sample_beam").map(|x| x as usize).unwrap_or(d.sample_beam),
         alts: g("alts").map(|x| x as usize).unwrap_or(d.alts),
         death_penalty: g("death_penalty").map(|x| x as f32).unwrap_or(d.death_penalty),

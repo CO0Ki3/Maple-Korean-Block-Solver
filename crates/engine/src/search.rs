@@ -37,6 +37,9 @@ pub struct SearchParams {
     pub death_penalty: f32,
     /// 능력이 있어서 당장은 안 죽지만 손패를 다 못 놓는 상태의 벌점.
     pub stuck_penalty: f32,
+    /// 다중 제거 편향: 탐색 내부 순위에만 300·k·n·(n−1)점을 더한다 (n = 동시 제거 줄 수). 실제 점수(gain)에는 넣지 않는다.
+    /// 캡까지 손패 수를 줄이려면 줄당 점수가 높은 다중 제거를 더 자주 만들어야 한다.
+    pub line_bonus: f32,
 }
 
 impl Default for SearchParams {
@@ -51,6 +54,7 @@ impl Default for SearchParams {
             alts: 3,
             death_penalty: 50_000.0,
             stuck_penalty: 3_000.0,
+            line_bonus: 0.0,
         }
     }
 }
@@ -88,6 +92,8 @@ pub struct Plan {
 struct Node {
     st: State,
     gain: u32,
+    /// 순위용 편향 누적 (다중 제거 보너스). gain과 달리 실제 점수가 아니다.
+    bias: f32,
     f: f32,
     parent: u32,
     mv: Option<Move>,
@@ -183,6 +189,16 @@ fn push_child(children: &mut Vec<Node>, dedup: &mut HashMap<Key, u32>, node: Nod
     }
 }
 
+/// 다중 제거 편향: n줄 동시 제거에 300·k·n·(n−1). 1줄은 0.
+#[inline]
+fn line_bias(p: &SearchParams, lines: u32) -> f32 {
+    if p.line_bonus == 0.0 || lines < 2 {
+        0.0
+    } else {
+        p.line_bonus * 300.0 * (lines * (lines - 1)) as f32
+    }
+}
+
 fn penalty(st: &State, p: &SearchParams) -> f32 {
     if st.held() > 0 {
         p.stuck_penalty
@@ -223,6 +239,7 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
     let mut arena: Vec<Node> = vec![Node {
         st: root.clone(),
         gain: 0,
+        bias: 0.0,
         f: 0.0,
         parent: u32::MAX,
         mv: None,
@@ -242,9 +259,9 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
         let mut children: Vec<Node> = Vec::new();
         let mut dedup: HashMap<Key, u32> = HashMap::new();
         for &ni in &beam {
-            let (st, gain, placed, dots_used) = {
+            let (st, gain, bias0, placed, dots_used) = {
                 let n = &arena[ni as usize];
-                (n.st.clone(), n.gain, n.placed, n.dots_used)
+                (n.st.clone(), n.gain, n.bias, n.placed, n.dots_used)
             };
             let mut tried = [false; NUM_PIECES];
             for slot in 0..3 {
@@ -264,7 +281,8 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
                             let mut ch = st.clone();
                             let out = ch.place_det(slot, oi, r, c);
                             let g = gain + out.score_delta;
-                            let f = g as f32 + value_fast(&ch, w) - unfit_penalty(&ch);
+                            let bias = bias0 + line_bias(p, out.lines);
+                            let f = g as f32 + bias + value_fast(&ch, w) - unfit_penalty(&ch);
                             nodes += 1;
                             push_child(
                                 &mut children,
@@ -272,6 +290,7 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
                                 Node {
                                     st: ch,
                                     gain: g,
+                                    bias,
                                     f,
                                     parent: ni,
                                     mv: Some(Move::Place { slot: slot as u8, orient: oi as u8, r: r as u8, c: c as u8 }),
@@ -288,7 +307,8 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
                     let mut ch = st.clone();
                     let out = ch.dot(r, c);
                     let g = gain + out.score_delta;
-                    let f = g as f32 + value_fast(&ch, w) - unfit_penalty(&ch);
+                    let bias = bias0 + line_bias(p, out.lines);
+                    let f = g as f32 + bias + value_fast(&ch, w) - unfit_penalty(&ch);
                     nodes += 1;
                     push_child(
                         &mut children,
@@ -296,6 +316,7 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
                         Node {
                             st: ch,
                             gain: g,
+                            bias,
                             f,
                             parent: ni,
                             mv: Some(Move::Dot { r: r as u8, c: c as u8 }),
@@ -360,7 +381,7 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
 
     if finished.is_empty() {
         let bp = &arena[best_partial as usize];
-        let v = bp.gain as f32 + value_full(&bp.st, pw, w) - penalty(&bp.st, p);
+        let v = bp.gain as f32 + bp.bias + value_full(&bp.st, pw, w) - penalty(&bp.st, p);
         return Plan {
             moves: path_of(&arena, best_partial),
             value: v,
@@ -384,7 +405,7 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
         }
         seen.insert(k, ());
         let n = &arena[i as usize];
-        let v = n.gain as f32 + value_full(&n.st, pw, w);
+        let v = n.gain as f32 + n.bias + value_full(&n.st, pw, w);
         top.push((i, v));
         if top.len() >= p.leaf_k.max(1) {
             break;
@@ -397,7 +418,7 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
         for item in top.iter_mut().take(k) {
             let n = &arena[item.0 as usize];
             // 공통 난수: 모든 리프를 같은 손패 표본으로 평가해야 순위가 표본 잡음에 흔들리지 않는다.
-            item.1 = n.gain as f32 + lookahead_value(&n.st, pw, w, p, seed);
+            item.1 = n.gain as f32 + n.bias + lookahead_value(&n.st, pw, w, p, seed);
         }
         top.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         // 2단계: 상위 1/4 리프에만 다른 표본을 더 뽑아 평균을 정밀하게 한다 (successive halving).
@@ -408,9 +429,9 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
             let (n1, n2) = (p.samples as f32, p.samples_top as f32);
             for item in top.iter_mut().take(k2) {
                 let n = &arena[item.0 as usize];
-                let v1 = item.1 - n.gain as f32;
+                let v1 = item.1 - n.gain as f32 - n.bias;
                 let v2 = lookahead_value(&n.st, pw, w, &p2, seed2);
-                item.1 = n.gain as f32 + (v1 * n1 + v2 * n2) / (n1 + n2);
+                item.1 = n.gain as f32 + n.bias + (v1 * n1 + v2 * n2) / (n1 + n2);
             }
             top.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         }
@@ -463,6 +484,7 @@ fn lookahead_value(leaf: &State, pw: &PieceWeights, w: &Weights, p: &SearchParam
         alts: 1,
         death_penalty: p.death_penalty,
         stuck_penalty: p.stuck_penalty,
+        line_bonus: p.line_bonus,
     };
     let mut acc = 0f32;
     for m in 0..p.samples {

@@ -188,6 +188,8 @@ export interface SearchParams {
   alts: number;
   death_penalty: number;
   stuck_penalty: number;
+  /** 다중 제거 편향 k: 탐색 순위에 300·k·n·(n−1) 가산 (실제 점수 아님). 캡까지 손패 수를 줄이는 용도. */
+  line_bonus: number;
 }
 
 export const W = 10;

@@ -111,7 +111,7 @@ export class Simulator {
 
   private params(): Partial<SearchParams> {
     const samples = Math.max(0, this.settings.samples);
-    return { beam: this.settings.beam, max_dots: this.settings.maxDots, leaf_k: samples > 0 ? 16 : 32, samples, samples_top: samples > 0 ? samples * 2 : 0, sample_beam: 12, alts: 1 };
+    return { beam: this.settings.beam, max_dots: this.settings.maxDots, leaf_k: samples > 0 ? 16 : 32, samples, samples_top: samples > 0 ? samples * 2 : 0, sample_beam: 12, alts: 1, line_bonus: store.state.settings.params.line_bonus ?? 0 };
   }
 
   /** 손패 추첨 분포. null = 균등. */
