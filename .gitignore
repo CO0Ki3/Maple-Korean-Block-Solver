@@ -5,3 +5,4 @@
 /weights/runs
 *.log
 .DS_Store
+/release

@@ -16,7 +16,13 @@ weights/        학습된 평가 가중치
 docs/           설계 문서
 ```
 
-## 실행
+## 실행 (개발 환경 없이)
+
+[Releases](https://github.com/CO0Ki3/Maple-Korean-Block-Solver/releases)에서 `moamoa-solver-vX.Y.Z.zip`을 받아 풀고, [Node.js LTS](https://nodejs.org)만 설치한 뒤
+Windows는 `start.bat`, macOS는 `start.command`를 더블클릭하면 브라우저가 http://localhost:8787 로 열립니다. 자세한 내용은 zip 안의 `README.txt`.
+(배포 zip 만들기: `scripts/build-release.sh v2.0.0` → `release/moamoa-solver-v2.0.0.zip`)
+
+## 실행 (소스에서)
 
 필요: Rust(stable), `wasm-pack`, Node 20+.
 

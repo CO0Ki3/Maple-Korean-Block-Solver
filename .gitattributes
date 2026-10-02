@@ -1,0 +1,4 @@
+# Windows 배치 파일은 CRLF 로 체크아웃되어야 cmd.exe 에서 안전하다
+*.bat text eol=crlf
+*.command text eol=lf
+*.sh text eol=lf
