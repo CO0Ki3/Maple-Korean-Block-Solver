@@ -44,6 +44,7 @@ export function renderSettings(): void {
     <label>점 찍기 끼워 넣기 최대 <input type="number" id="set-maxdots" value="${p.max_dots ?? 2}" min="0" max="3" /></label>
     <label>리프 정밀 평가 수 <input type="number" id="set-leafk" value="${p.leaf_k ?? 48}" min="4" max="400" /></label>
     <label>다음 손패 샘플 수 (0=끔, 느려짐) <input type="number" id="set-samples" value="${p.samples ?? 0}" min="0" max="32" /></label>
+    <label>상위 후보 추가 샘플 (2단계) <input type="number" id="set-stop" value="${p.samples_top ?? 0}" min="0" max="64" /></label>
     <label>샘플 탐색 빔 <input type="number" id="set-sbeam" value="${p.sample_beam ?? 12}" min="2" max="64" /></label>
     <label>워커 수 <input type="number" id="set-workers" value="${s.workers}" min="1" max="16" /></label>
     <label>회전 버튼 방향 <select id="set-rot"><option value="cw"${s.rotDir === 'cw' ? ' selected' : ''}>시계 방향</option><option value="ccw"${s.rotDir === 'ccw' ? ' selected' : ''}>반시계 방향</option></select></label>
@@ -71,6 +72,7 @@ export function renderSettings(): void {
     s.params.max_dots = clamp(+num('set-maxdots').value, 0, 3, 2);
     s.params.leaf_k = clamp(+num('set-leafk').value, 4, 400, 48);
     s.params.samples = clamp(+num('set-samples').value, 0, 32, 0);
+    s.params.samples_top = clamp(+num('set-stop').value, 0, 64, 0);
     s.params.sample_beam = clamp(+num('set-sbeam').value, 2, 64, 12);
     s.alpha = clamp(+num('set-alpha').value, 0, 50, 1);
     s.autoSolve = num('set-auto').checked;
@@ -79,7 +81,7 @@ export function renderSettings(): void {
     app.renderAll();
     app.scheduleSolve();
   };
-  for (const id of ['set-beam', 'set-maxdots', 'set-leafk', 'set-samples', 'set-sbeam', 'set-alpha', 'set-auto']) num(id).onchange = onParams;
+  for (const id of ['set-beam', 'set-maxdots', 'set-leafk', 'set-samples', 'set-stop', 'set-sbeam', 'set-alpha', 'set-auto']) num(id).onchange = onParams;
   num('set-workers').onchange = () => {
     s.workers = clamp(+num('set-workers').value, 1, 16, 4);
     store.save();

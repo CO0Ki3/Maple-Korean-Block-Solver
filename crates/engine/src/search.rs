@@ -17,6 +17,7 @@ pub enum Move {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SearchParams {
     /// 레벨·버킷당 유지하는 노드 수.
     pub beam: usize,
@@ -26,6 +27,8 @@ pub struct SearchParams {
     pub leaf_k: usize,
     /// 리프별 다음 손패 샘플 수 (0이면 끔).
     pub samples: usize,
+    /// 2단계: 1단계 상위 1/4 리프에만 추가로 뽑는 샘플 수 (0이면 끔). 같은 연산으로 최상위 후보의 잡음을 줄인다.
+    pub samples_top: usize,
     /// 샘플 탐색의 빔.
     pub sample_beam: usize,
     /// 대안 후보 수.
@@ -43,6 +46,7 @@ impl Default for SearchParams {
             max_dots: 2,
             leaf_k: 64,
             samples: 0,
+            samples_top: 0,
             sample_beam: 16,
             alts: 3,
             death_penalty: 50_000.0,
@@ -396,6 +400,20 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
             item.1 = n.gain as f32 + lookahead_value(&n.st, pw, w, p, seed);
         }
         top.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // 2단계: 상위 1/4 리프에만 다른 표본을 더 뽑아 평균을 정밀하게 한다 (successive halving).
+        if p.samples_top > 0 && k > 0 {
+            let k2 = (k / 4).max(1).min(k);
+            let p2 = SearchParams { samples: p.samples_top, ..p.clone() };
+            let seed2 = seed ^ 0x5151_5151_5151_5151;
+            let (n1, n2) = (p.samples as f32, p.samples_top as f32);
+            for item in top.iter_mut().take(k2) {
+                let n = &arena[item.0 as usize];
+                let v1 = item.1 - n.gain as f32;
+                let v2 = lookahead_value(&n.st, pw, w, &p2, seed2);
+                item.1 = n.gain as f32 + (v1 * n1 + v2 * n2) / (n1 + n2);
+            }
+            top.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        }
     }
 
     let mut alts: Vec<Alt> = Vec::new();
@@ -440,6 +458,7 @@ fn lookahead_value(leaf: &State, pw: &PieceWeights, w: &Weights, p: &SearchParam
         max_dots: p.max_dots.min(1),
         leaf_k: 8,
         samples: 0,
+        samples_top: 0,
         sample_beam: 0,
         alts: 1,
         death_penalty: p.death_penalty,

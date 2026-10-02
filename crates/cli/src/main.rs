@@ -76,6 +76,7 @@ fn search_params(a: &Args) -> SearchParams {
         max_dots: a.get("max-dots", 2u8),
         leaf_k: a.get("leaf-k", 32usize),
         samples: a.get("samples", 0usize),
+        samples_top: a.get("samples-top", 0usize),
         sample_beam: a.get("sample-beam", 12usize),
         alts: 3,
         ..Default::default()

@@ -23,6 +23,7 @@ fn parse_params(s: &str) -> Result<SearchParams, JsValue> {
         max_dots: g("max_dots").map(|x| x as u8).unwrap_or(d.max_dots),
         leaf_k: g("leaf_k").map(|x| x as usize).unwrap_or(d.leaf_k),
         samples: g("samples").map(|x| x as usize).unwrap_or(d.samples),
+        samples_top: g("samples_top").map(|x| x as usize).unwrap_or(d.samples_top),
         sample_beam: g("sample_beam").map(|x| x as usize).unwrap_or(d.sample_beam),
         alts: g("alts").map(|x| x as usize).unwrap_or(d.alts),
         death_penalty: g("death_penalty").map(|x| x as f32).unwrap_or(d.death_penalty),

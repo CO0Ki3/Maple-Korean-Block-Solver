@@ -32,7 +32,7 @@ export interface Settings {
   version: number;
 }
 
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 export interface SlotMeta {
   /** 화면에 보이는 방향의 칸 목록 (회전·반전 안내용). null이면 기준 모양. */
@@ -72,7 +72,7 @@ export function blankGame(): GameState {
 export function defaultSettings(): Settings {
   return {
     // 자기대전 비교: 빔 32 단독 평균 32.8만 → 다음 손패 샘플 4개 44.5만 (24판). 샘플링이 기본.
-    params: { beam: 64, max_dots: 2, leaf_k: 48, samples: 4, sample_beam: 12, alts: 3 },
+    params: { beam: 64, max_dots: 2, leaf_k: 48, samples: 4, samples_top: 8, sample_beam: 12, alts: 3 },
     workers: Math.max(2, Math.min(8, (navigator.hardwareConcurrency || 4) - 1)),
     rotDir: 'cw',
     flipAxis: 'h',
@@ -134,6 +134,11 @@ class Store {
         s.settings.params.samples = Math.max(s.settings.params.samples ?? 0, 4);
         s.settings.params.beam = Math.max(s.settings.params.beam ?? 0, 64);
         s.settings.version = 2;
+      }
+      if (s.settings.version < 3) {
+        // v3: 상위 후보 2단계 샘플 기본 켬.
+        if (s.settings.params.samples_top === undefined) s.settings.params.samples_top = 8;
+        s.settings.version = 3;
       }
       if (!s.slots || s.slots.length !== 3) s.slots = [emptySlot(), emptySlot(), emptySlot()];
       s.game.icons = s.game.icons ?? [];

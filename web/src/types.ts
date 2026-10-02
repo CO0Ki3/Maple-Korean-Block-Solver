@@ -183,6 +183,7 @@ export interface SearchParams {
   max_dots: number;
   leaf_k: number;
   samples: number;
+  samples_top: number;
   sample_beam: number;
   alts: number;
   death_penalty: number;

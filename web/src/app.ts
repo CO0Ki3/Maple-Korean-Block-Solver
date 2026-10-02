@@ -124,20 +124,35 @@ class App {
       const plan = await this.pool.solve(this.game, base, s.weights, store.pieceWeights());
       if (gen !== this.pool.gen) return;
       if (samples > 0 && plan.complete) {
-        this.status(`후보 ${plan.alts.length + 1}개를 다음 손패 ${samples}개 샘플로 재평가 중…`);
+        const samplesTop = s.params.samples_top ?? 0;
+        this.status(`후보 ${plan.alts.length + 1}개를 다음 손패 ${samples}개 샘플로 재평가 중…${samplesTop ? ` (상위 후보는 +${samplesTop})` : ''}`);
         const cands = [{ value: plan.value, gain: plan.gain, moves: plan.moves }, ...plan.alts];
-        const la = { ...s.params, samples, alts: 1 };
+        const la = { ...s.params, samples, samples_top: 0, alts: 1 };
         const scored = await Promise.all(
           cands.map(async (c, i) => {
             const leaf = this.applyMoves(this.game, c.moves);
-            if (!leaf) return { c, v: -Infinity, i };
+            if (!leaf) return { c, v: -Infinity, i, leaf: null as GameState | null, la: -Infinity };
             // 공통 난수(같은 시드): 후보들을 같은 손패 표본으로 비교해야 순위가 잡음에 흔들리지 않는다.
             const v = await this.pool.lookahead(leaf, la, s.weights, store.pieceWeights(), 1000);
-            return { c, v: c.gain + v, i };
+            return { c, v: c.gain + v, i, leaf, la: v };
           }),
         );
         if (gen !== this.pool.gen) return;
         scored.sort((a, b) => b.v - a.v);
+        // 2단계: 상위 후보(최대 4개)에만 다른 표본을 더 뽑아 평균을 정밀하게 한다.
+        if (samplesTop > 0) {
+          const topN = Math.min(4, scored.length);
+          const la2 = { ...s.params, samples: samplesTop, samples_top: 0, alts: 1 };
+          await Promise.all(
+            scored.slice(0, topN).map(async (x) => {
+              if (!x.leaf) return;
+              const v2 = await this.pool.lookahead(x.leaf, la2, s.weights, store.pieceWeights(), 2000);
+              x.v = x.c.gain + (x.la * samples + v2 * samplesTop) / (samples + samplesTop);
+            }),
+          );
+          if (gen !== this.pool.gen) return;
+          scored.sort((a, b) => b.v - a.v);
+        }
         const best = scored[0];
         plan.moves = best.c.moves;
         plan.gain = best.c.gain;
