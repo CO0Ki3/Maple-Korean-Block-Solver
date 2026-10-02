@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>한글 모아모아 솔버 v2</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='6' height='6' rx='1' fill='%23ff6f91'/%3E%3Crect x='9' y='1' width='6' height='6' rx='1' fill='%235ec8ff'/%3E%3Crect x='1' y='9' width='6' height='6' rx='1' fill='%237cf29b'/%3E%3Crect x='9' y='9' width='6' height='6' rx='1' fill='%23ffd34d'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" />
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <h1>한글 모아모아 솔버 <span class="v">v2</span></h1>
+      <nav class="tabs" role="tablist">
+        <button data-tab="helper" class="on" role="tab">솔버</button>
+        <button data-tab="sim" role="tab">시뮬레이터</button>
+      </nav>
+      <div id="status" class="status" aria-live="polite"></div>
+      <div class="top-actions">
+        <button id="b-undo" title="되돌리기 (Ctrl+Z)">되돌리기</button>
+        <button id="b-newgame">새 판</button>
+      </div>
+    </header>
+    <main class="cols" id="simView" hidden>
+      <section class="col col-left">
+        <div class="panel">
+          <h2>시뮬레이터 <span class="muted small">규칙대로 손패가 들어오고 자동으로 둡니다</span></h2>
+          <div id="sim-controls"></div>
+        </div>
+        <div class="panel">
+          <div id="sim-stats"></div>
+          <div id="sim-board" class="board" aria-label="시뮬레이터 게임판"></div>
+          <div id="sim-hand" class="hand" style="margin-top:10px"></div>
+        </div>
+      </section>
+      <section class="col col-right">
+        <div class="panel">
+          <h2>진행 기록</h2>
+          <div id="sim-log" class="log"></div>
+        </div>
+        <div class="panel">
+          <h2>여러 판 일괄 실행 <span class="muted small">점수 분포 보기</span></h2>
+          <div id="sim-batch"></div>
+          <div id="sim-batch-out"></div>
+        </div>
+      </section>
+    </main>
+    <main class="cols" id="helperView">
+      <section class="col col-left">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>게임판 <span id="boardInfo" class="muted small"></span></h2>
+            <div class="modes" role="group" aria-label="클릭 모드">
+              <button data-mode="paint" class="on">칸 칠하기</button>
+              <button data-mode="icon">능력 아이콘</button>
+              <button data-mode="dot">점 찍기 사용</button>
+              <button id="b-clear">판 비우기</button>
+            </div>
+          </div>
+          <div id="prevNote" class="prevnote"></div>
+          <div id="board" class="board" aria-label="게임판"></div>
+          <div class="legend small muted">
+            <span><i class="sw f"></i> 채움</span>
+            <span><i class="sw ab-e"></i> ⊙ 점 찍기 아이콘</span>
+            <span><i class="sw ab-r"></i> ⇄ 바꿔 뽑기 아이콘</span>
+            <span><i class="sw p1"></i> 1단계</span><span><i class="sw p2"></i> 2단계</span><span><i class="sw p3"></i> 3단계</span><span><i class="sw er"></i> 점 찍기</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>점수 · 능력</h2>
+          <div id="abilities" class="abilities"></div>
+        </div>
+      </section>
+      <section class="col col-right">
+        <div class="panel">
+          <div class="panel-head"><h2>스크린샷</h2><button id="b-shotHide" class="small">접기</button></div>
+          <div id="drop" class="drop">
+            <p>게임 화면을 캡처해서 이 페이지에 <b>붙여넣기(Ctrl+V / ⌘V)</b> 하거나 이미지를 끌어다 놓으세요.
+              <label class="link">파일 선택<input id="shotFile" type="file" accept="image/*" hidden /></label></p>
+          </div>
+          <div id="shotResult" hidden>
+            <div id="shotMsg"></div>
+            <div class="row gap"><button id="b-manual">판 위치 직접 지정</button><button id="b-resetCal">저장된 판 위치 지우기</button></div>
+            <div id="shotPanel"><canvas id="shotCanvas"></canvas></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>손패</h2><div id="handInfo" class="small muted"></div></div>
+          <div id="askBox"></div>
+          <div id="hand" class="hand"></div>
+        </div>
+        <div class="panel" id="planPanel" hidden>
+          <div class="panel-head"><h2>추천 배치</h2><div id="planScore" class="num"></div></div>
+          <div id="planMsg"></div>
+          <div id="steps" class="steps"></div>
+          <div class="row gap">
+            <button id="b-apply1" class="primary">1단계 적용</button>
+            <button id="b-applyAll">전부 적용 · 판에 반영</button>
+            <button id="b-reroll">바꿔 뽑기 분석</button>
+            <button id="b-solve">다시 계산</button>
+          </div>
+          <div id="rerollOut"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>조각 라이브러리</h2><div id="libInfo" class="small muted"></div></div>
+          <p class="small muted">슬롯을 고른 뒤 조각을 누르면 손패에 들어갑니다. 숫자는 지금까지 본 횟수, 막대는 추정 등장 확률입니다.</p>
+          <div id="lib" class="lib"></div>
+        </div>
+        <details class="panel" id="settingsPanel">
+          <summary><h2>설정</h2></summary>
+          <div id="settings"></div>
+        </details>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
