@@ -71,3 +71,5 @@ lookahead 설정 비교 2차 (cem3-latest 가중치, 24판 시드 300~323, 감�
 
 결론: 빔 64 + 샘플 4 + 상위 후보 추가 샘플 8이 전 판 캡 도달 중 캡까지 손패가 가장 적고 다중 제거 비율이 가장 높으며 비용도 가장 싸다. 솔버 UI 기본값은 여기서 여유를 둔 **빔 64 + 샘플 8 + 상위 후보 8** (v2.1.0, 사용자 결정). 시뮬레이터는 속도 때문에 샘플 0이 기본이고 설정에서 켤 수 있다.
 `web/public/weights/trained.json`은 UI가 시작할 때 자동으로 읽는다. 새 학습 결과가 더 좋으면 `scripts/publish-weights.sh`로 두 곳을 같이 바꾼다. 학습 로그와 세대별 가중치는 `weights/runs/<이름>/`에 쌓인다 (git 제외).
+
+평가 함수 교체 실험(N-tuple, TD/MC/증류)은 모두 선형 평가를 넘지 못했다. 표와 해석은 `docs/DESIGN.md` 9장. 실험 산출물은 `weights/runs/td-smoke`, `distill1`, `distill2` (git 제외).

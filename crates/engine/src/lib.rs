@@ -5,6 +5,7 @@
 
 pub mod board;
 pub mod eval;
+pub mod ntuple;
 pub mod pieces;
 pub mod rng;
 pub mod search;
@@ -13,10 +14,11 @@ pub mod state;
 
 pub use board::{Board, FULL, H, W};
 pub use eval::{value_fast, value_full, Weights, FEATURE_NAMES, NF};
+pub use ntuple::{NTuple, Shape};
 pub use pieces::{piece, pieces, Orient, Piece, NUM_PIECES};
 pub use rng::Rng;
-pub use search::{lookahead, reroll_analysis, reroll_option, search, Move, Plan, RerollOption, RerollReport, SearchParams};
-pub use sim::{play_game, policy_step, record_events, summarize, Event, GameResult, PlayConfig, Summary};
+pub use search::{lookahead, reroll_analysis, reroll_option, search, search_collect, Move, Plan, RerollOption, RerollReport, SearchParams};
+pub use sim::{play_game, policy_step, policy_step_collect, record_events, summarize, Event, GameResult, PlayConfig, Summary};
 pub use state::{
     line_score, AbilityKind, Icon, PieceWeights, PlaceOutcome, State, ABILITY_CAP, ICON_CAP,
     PICKUP_SCORE, P_DOT, SCORE_CAP, SPAWN_EVERY,

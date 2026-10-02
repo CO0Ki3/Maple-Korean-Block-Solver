@@ -208,12 +208,18 @@ fn penalty(st: &State, p: &SearchParams) -> f32 {
 }
 
 pub fn search(st: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams) -> Plan {
+    search_collect(st, pw, w, p, None)
+}
+
+/// `search`와 같되, 샘플링 lookahead로 평가한 상위 리프들을 (리프 상태, lookahead 값) 으로 모아 준다.
+/// 값은 리프에서 본 미래 가치(이번 손패의 gain 제외)라 평가 함수의 학습 목표로 바로 쓸 수 있다.
+pub fn search_collect(st: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, mut collect: Option<&mut Vec<(State, f32)>>) -> Plan {
     let seed = 0x5EED_1234_ABCD_0001;
-    let plan = search_inner(st, pw, w, p, seed);
+    let plan = search_inner(st, pw, w, p, seed, collect.as_deref_mut());
     // 좁은 빔이 유일한 완전 배치를 놓쳤을 수 있다. 불완전하면 빔을 4배로 한 번 더 시도한다 (드문 경우라 비용이 작다).
     if !plan.complete && plan.placed > 0 && p.beam < 256 {
         let wide = SearchParams { beam: p.beam * 4, ..p.clone() };
-        let retry = search_inner(st, pw, w, &wide, seed);
+        let retry = search_inner(st, pw, w, &wide, seed, collect.as_deref_mut());
         if retry.complete {
             return retry;
         }
@@ -221,7 +227,7 @@ pub fn search(st: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams) -> P
     plan
 }
 
-fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, seed: u64) -> Plan {
+fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, seed: u64, collect: Option<&mut Vec<(State, f32)>>) -> Plan {
     let n_pieces = root.hand_count();
     if n_pieces == 0 || root.over {
         return Plan {
@@ -435,6 +441,12 @@ fn search_inner(root: &State, pw: &PieceWeights, w: &Weights, p: &SearchParams, 
             }
             top.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         }
+        if let Some(out) = collect {
+            for &(i, v) in top.iter().take(k) {
+                let n = &arena[i as usize];
+                out.push((n.st.clone(), v - n.gain as f32 - n.bias));
+            }
+        }
     }
 
     let mut alts: Vec<Alt> = Vec::new();
@@ -491,7 +503,7 @@ fn lookahead_value(leaf: &State, pw: &PieceWeights, w: &Weights, p: &SearchParam
         let mut s = leaf.clone();
         let mut rng = Rng::new(seed.wrapping_add((m as u64 + 1).wrapping_mul(0xD1B5_4A32_D192_ED03)));
         s.draw_hand(&mut rng, pw);
-        let pl = search_inner(&s, pw, w, &sub, seed ^ 0xABCD);
+        let pl = search_inner(&s, pw, w, &sub, seed ^ 0xABCD, None);
         acc += pl.value;
     }
     acc / p.samples as f32

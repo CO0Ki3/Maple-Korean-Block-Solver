@@ -7,7 +7,7 @@ use crate::board::{H, W};
 use crate::eval::{value_fast, Weights};
 use crate::pieces::piece;
 use crate::rng::Rng;
-use crate::search::{reroll_analysis, search, Move, SearchParams};
+use crate::search::{reroll_analysis, search_collect, Move, SearchParams};
 use crate::state::{Icon, PieceWeights, State, ABILITY_CAP, SCORE_CAP};
 use serde::{Deserialize, Serialize};
 
@@ -99,12 +99,17 @@ fn best_dot_cell(st: &State, w: &Weights) -> Option<(usize, usize)> {
 
 /// 정책 한 수: 탐색 → (필요하면) 바꿔 뽑기 → 계획 실행. 상태를 직접 바꾸고 일어난 일을 돌려준다.
 pub fn policy_step(st: &mut State, rng: &mut Rng, pw: &PieceWeights, w: &Weights, sp: &SearchParams, cfg: &PlayConfig) -> Vec<Event> {
+    policy_step_collect(st, rng, pw, w, sp, cfg, None)
+}
+
+/// `policy_step`과 같되, 탐색이 샘플링으로 평가한 리프들을 학습 표본으로 모아 준다 (`sp.samples > 0`일 때만 채워진다).
+pub fn policy_step_collect(st: &mut State, rng: &mut Rng, pw: &PieceWeights, w: &Weights, sp: &SearchParams, cfg: &PlayConfig, collect: Option<&mut Vec<(State, f32)>>) -> Vec<Event> {
     let mut ev = Vec::new();
     if st.over {
         return ev;
     }
     let reroll_params = SearchParams { beam: cfg.reroll_beam.max(1), samples: 0, leaf_k: 8, alts: 1, ..sp.clone() };
-    let plan = search(st, pw, w, sp);
+    let plan = search_collect(st, pw, w, sp, collect);
     ev.push(Event::Plan { complete: plan.complete, gain: plan.gain, value: plan.value, moves: plan.moves.len() });
 
     // 바꿔 뽑기: 손패를 다 못 놓거나, 보유가 가득 차 생성이 막혀 있을 때 검토.

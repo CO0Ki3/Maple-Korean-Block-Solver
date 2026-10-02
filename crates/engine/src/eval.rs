@@ -3,9 +3,11 @@
 //! `fast` 특징은 탐색 내부 노드마다, `slow` 특징(조각 분포 기반 커버리지)은 리프에서만 계산한다.
 
 use crate::board::{Board, FULL, H, W};
+use crate::ntuple::NTuple;
 use crate::pieces::pieces;
 use crate::state::{PieceWeights, State, ABILITY_CAP};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 pub const NF: usize = 24;
 pub const N_FAST: usize = 22;
@@ -37,9 +39,23 @@ pub const FEATURE_NAMES: [&str; NF] = [
     "dead_coverage",     // 23 [slow] 빈 칸별 max(0, 1 − 덮을 수 있는 조각 확률 합)
 ];
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Weights {
     pub w: [f32; NF],
+    /// 선택적 N-tuple 잔차 항 (판 패턴 조회표). 직렬화하지 않고 별도 파일로 다룬다.
+    #[serde(skip)]
+    pub ntuple: Option<Arc<NTuple>>,
+}
+
+impl PartialEq for Weights {
+    fn eq(&self, o: &Self) -> bool {
+        self.w == o.w
+            && match (&self.ntuple, &o.ntuple) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
+    }
 }
 
 impl Default for Weights {
@@ -70,7 +86,7 @@ impl Default for Weights {
         w[21] = -5.0;
         w[22] = -6000.0;
         w[23] = -250.0;
-        Weights { w }
+        Weights { w, ntuple: None }
     }
 }
 
@@ -316,6 +332,9 @@ pub fn value_fast(st: &State, w: &Weights) -> f32 {
     for i in 0..N_FAST {
         v += w.w[i] * f[i];
     }
+    if let Some(nt) = &w.ntuple {
+        v += nt.eval(&st.board);
+    }
     v
 }
 
@@ -326,6 +345,9 @@ pub fn value_full(st: &State, pw: &PieceWeights, w: &Weights) -> f32 {
     let mut v = 0f32;
     for i in 0..NF {
         v += w.w[i] * f[i];
+    }
+    if let Some(nt) = &w.ntuple {
+        v += nt.eval(&st.board);
     }
     v
 }
