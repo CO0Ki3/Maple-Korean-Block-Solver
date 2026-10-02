@@ -131,6 +131,18 @@ export function classifyCells(P: Prepped, R: Rect, W: number, H: number): CellIn
       const xb = Math.min(w - 1, Math.floor(R.x0 + (c + 0.86) * R.p));
       const ya = Math.max(0, Math.ceil(R.y0 + (r + 0.14) * R.q));
       const yb = Math.min(h - 1, Math.floor(R.y0 + (r + 0.86) * R.q));
+      // 중앙부(0.35~0.65): 장식이 모서리에만 걸친 칸을 가려내는 데 쓴다 (원본에 없던 추가 통계)
+      const cxa = R.x0 + (c + 0.35) * R.p;
+      const cxb = R.x0 + (c + 0.65) * R.p;
+      const cya = R.y0 + (r + 0.35) * R.q;
+      const cyb = R.y0 + (r + 0.65) * R.q;
+      let cn = 0;
+      let ct = 0;
+      let csr = 0;
+      let csg = 0;
+      let csb = 0;
+      let csl = 0;
+      let csl2 = 0;
       let n = 0;
       let t = 0;
       let wh = 0;
@@ -153,6 +165,15 @@ export function classifyCells(P: Prepped, R: Rect, W: number, H: number): CellIn
           n++;
           if (cls[i] & CLS_TEAL) t++;
           if (cls[i] & CLS_WHITE) wh++;
+          if (x >= cxa && x <= cxb && y >= cya && y <= cyb) {
+            cn++;
+            if (cls[i] & CLS_TEAL) ct++;
+            csr += R0;
+            csg += G0;
+            csb += B0;
+            csl += L;
+            csl2 += L * L;
+          }
           sr += R0;
           sg += G0;
           sb += B0;
@@ -175,9 +196,14 @@ export function classifyCells(P: Prepped, R: Rect, W: number, H: number): CellIn
         }
       }
       const mL = n ? sl / n : 0;
+      const cmL = cn ? csl / cn : 0;
       out.push({
         r,
         c,
+        n,
+        cTeal: cn ? ct / cn : 0,
+        cStd: cn ? Math.sqrt(Math.max(0, csl2 / cn - cmL * cmL)) : 0,
+        cm: cn ? [csr / cn, csg / cn, csb / cn] : [0, 0, 0],
         teal: n ? t / n : 0,
         white: n ? wh / n : 0,
         edge: n ? ed / n : 0,
@@ -217,12 +243,24 @@ export function classifyCells(P: Prepped, R: Rect, W: number, H: number): CellIn
     const dist = rf ? Math.hypot(o.m[0] - rf[0], o.m[1] - rf[1], o.m[2] - rf[2]) : 0;
     /* 능력 아이콘: 흰 테두리 빛 + 촘촘한 경계. 블럭은 광택(밝기 편차)이 크고, 빈칸은 평평함 */
     o.icon = o.white >= 0.08 && o.edge >= 0.25;
+    // 보조(원본에 없음): 흰 광채가 약해도 보라 화살표가 뚜렷하고 배경이 보이면 바꿔 뽑기 아이콘으로 본다.
+    if (!o.icon && o.pur >= 0.08 * o.n && o.teal >= 0.25 && o.edge >= 0.15) o.icon = true;
     if (o.icon) {
-      o.state = o.teal >= 0.4 ? 'empty' : 'filled';
+      // 아이콘이 칸을 크게 덮으면 전체 청록 비율이 낮아진다. 아이콘 픽셀(흰빛·보라·남색)을 뺀 나머지에서
+      // 배경이 차지하는 비율로 '아이콘만 있는 빈 칸'과 '블럭 위의 아이콘'을 가른다. (원본: teal >= 0.4 만 사용)
+      const rest = Math.max(1, o.n - o.white * o.n - o.pur - o.nav);
+      const tealRest = Math.min(1, (o.teal * o.n) / rest);
+      o.state = o.teal >= 0.4 || tealRest >= 0.3 ? 'empty' : 'filled';
       o.ab = o.pur > o.nav && o.pur >= 6 ? 'r' : 'e';
     } else if (o.std >= 9 && (o.teal < 0.75 || dist > 20)) o.state = 'filled';
     else if (o.teal >= 0.75) o.state = dist > 45 ? 'filled' : 'empty';
     else o.state = o.teal < 0.35 ? 'filled' : 'empty';
+    // 장식(테두리 덩굴 잎 등)이 모서리에만 걸친 칸: 중앙부가 배경색 그대로면 빈 칸이다.
+    // 블럭은 중앙 색이 배경과 멀어서(파란 블럭도 거리 > 30) 영향을 받지 않는다.
+    if (!o.icon && o.state === 'filled' && rf) {
+      const cdist = Math.hypot(o.cm[0] - rf[0], o.cm[1] - rf[1], o.cm[2] - rf[2]);
+      if (o.cTeal >= 0.9 && o.cStd < 6 && cdist < 20) o.state = 'empty';
+    }
   });
   return out;
 }

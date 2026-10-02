@@ -35,6 +35,12 @@ export interface Prepped {
 
 /** 칸 하나의 측정값과 판정 결과. */
 export interface CellInfo {
+  /** 샘플링한 픽셀 수 (칸 안쪽 0.14~0.86 창). */
+  n: number;
+  /** 중앙부(0.35~0.65) 청록 비율·밝기 편차·평균색. 장식이 모서리에 걸친 칸 판별용. */
+  cTeal: number;
+  cStd: number;
+  cm: [number, number, number];
   /** 행 / 열 (0부터) */
   r: number;
   c: number;
