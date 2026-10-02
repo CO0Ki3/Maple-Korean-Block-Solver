@@ -1,0 +1,15 @@
+[package]
+name = "moamoa-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "자기대전, 벤치마크, CEM 학습 바이너리"
+
+[[bin]]
+name = "moamoa"
+path = "src/main.rs"
+
+[dependencies]
+moamoa-engine = { path = "../engine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
